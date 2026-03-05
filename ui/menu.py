@@ -189,23 +189,7 @@ class Menu:
         """Draw the menu"""
         # Draw background
         screen.fill(SKY_BLUE := (135, 206, 235))
-        
-        # === BACKGROUND FIGURES ===
-        # Draw some trees in background
-        self._draw_background_tree(screen, 150, SCREEN_HEIGHT - 120)
-        self._draw_background_tree(screen, 300, SCREEN_HEIGHT - 150)
-        self._draw_background_tree(screen, SCREEN_WIDTH - 200, SCREEN_HEIGHT - 130)
-        
-        # Draw a small tractor figure
-        self._draw_tractor(screen, SCREEN_WIDTH - 400, SCREEN_HEIGHT - 110)
-        
-        # Draw some crops
-        for i in range(10):
-            self._draw_crop(screen, 400 + i * 60, SCREEN_HEIGHT - 90)
-
-        # Draw decorative grass at bottom
-        grass_rect = pygame.Rect(0, SCREEN_HEIGHT - 100, SCREEN_WIDTH, 100)
-        pygame.draw.rect(screen, (34, 139, 34), grass_rect)
+        self._draw_farm_background(screen)
         
         # Draw title with shadow
         title_shadow = self.title_font.render(self.title_text, True, (0, 50, 0))
@@ -253,26 +237,148 @@ class Menu:
             inst_rect = inst_surface.get_rect(center=(SCREEN_WIDTH // 2, y_start + i * 25))
             screen.blit(inst_surface, inst_rect)
 
-    def _draw_background_tree(self, screen, x, y):
-        """Draw a stylized tree for background"""
-        # Trunk
-        pygame.draw.rect(screen, (101, 67, 33), (x - 10, y, 20, 40))
-        # Leaves
-        pygame.draw.circle(screen, (34, 139, 34), (x, y - 10), 35)
-        pygame.draw.circle(screen, (50, 180, 50), (x - 15, y - 20), 25)
-        pygame.draw.circle(screen, (50, 180, 50), (x + 15, y - 20), 25)
+    def _draw_farm_background(self, screen: pygame.Surface):
+        """Draw a scenic farm background with animals and trees."""
+        horizon_y = int(SCREEN_HEIGHT * 0.52)
+        # Far hills
+        pygame.draw.ellipse(screen, (120, 190, 120), (-120, horizon_y - 140, 520, 240))
+        pygame.draw.ellipse(screen, (110, 180, 110), (260, horizon_y - 160, 620, 280))
+        pygame.draw.ellipse(screen, (100, 170, 100), (760, horizon_y - 150, 620, 260))
 
-    def _draw_tractor(self, screen, x, y):
-        """Draw a small tractor figure"""
-        # Body
-        pygame.draw.rect(screen, (220, 20, 60), (x, y, 60, 30), border_radius=5)
-        pygame.draw.rect(screen, (220, 20, 60), (x + 30, y - 20, 25, 25), border_radius=3)
-        # Wheels
-        pygame.draw.circle(screen, (30, 30, 30), (x + 15, y + 30), 12)
-        pygame.draw.circle(screen, (30, 30, 30), (x + 50, y + 30), 15)
-        # Hubcaps
-        pygame.draw.circle(screen, (200, 200, 200), (x + 15, y + 30), 4)
-        pygame.draw.circle(screen, (200, 200, 200), (x + 50, y + 30), 5)
+        # Tree line
+        for x in range(60, SCREEN_WIDTH, 220):
+            self._draw_background_tree(screen, x, horizon_y + 20, scale=0.7)
+            self._draw_background_tree(screen, x + 80, horizon_y + 10, scale=0.8)
+
+        # Farmland bands
+        pygame.draw.rect(screen, (78, 155, 78), (0, horizon_y, SCREEN_WIDTH, 120))
+        pygame.draw.rect(screen, (92, 168, 92), (0, horizon_y + 110, SCREEN_WIDTH, 120))
+
+        # Main grass foreground
+        grass_rect = pygame.Rect(0, SCREEN_HEIGHT - 160, SCREEN_WIDTH, 160)
+        pygame.draw.rect(screen, (34, 139, 34), grass_rect)
+        pygame.draw.rect(screen, (20, 110, 20), grass_rect, 4)
+
+        # Farm houses
+        self._draw_background_house(screen, 220, horizon_y + 40)
+        self._draw_background_house(screen, SCREEN_WIDTH - 320, horizon_y + 30, scale=0.9)
+
+        # Pasture fence
+        self._draw_fence_line(screen, 0, horizon_y + 140, SCREEN_WIDTH)
+
+        # Animals
+        self._draw_cow(screen, 520, horizon_y + 160)
+        self._draw_cow(screen, 700, horizon_y + 170, scale=0.9)
+        self._draw_chicken(screen, 980, horizon_y + 190)
+        self._draw_chicken(screen, 1060, horizon_y + 200, scale=0.8)
+
+        # Crops in foreground
+        for i in range(12):
+            self._draw_crop(screen, 420 + i * 60, SCREEN_HEIGHT - 120)
+
+        # Soft haze for depth
+        haze_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.rect(haze_surface, (255, 255, 255, 25), (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
+        screen.blit(haze_surface, (0, 0))
+
+    def _draw_background_tree(self, screen: pygame.Surface, x: int, y: int, scale: float = 1.0):
+        """Draw a stylized tree for background"""
+        trunk_width = int(20 * scale)
+        trunk_height = int(40 * scale)
+        pygame.draw.rect(screen, (101, 67, 33), (x - trunk_width // 2, y, trunk_width, trunk_height))
+        pygame.draw.circle(screen, (34, 139, 34), (x, y - int(10 * scale)), int(35 * scale))
+        pygame.draw.circle(screen, (50, 180, 50), (x - int(15 * scale), y - int(20 * scale)), int(25 * scale))
+        pygame.draw.circle(screen, (50, 180, 50), (x + int(15 * scale), y - int(20 * scale)), int(25 * scale))
+
+    def _draw_background_house(self, screen: pygame.Surface, x: int, y: int, scale: float = 1.0):
+        """Draw a simple house silhouette in the background."""
+        house_width = int(160 * scale)
+        house_height = int(100 * scale)
+        wall_rect = pygame.Rect(x, y, house_width, house_height)
+        pygame.draw.rect(screen, (220, 200, 170), wall_rect)
+        pygame.draw.rect(screen, (170, 140, 110), wall_rect, 3)
+
+        roof_points = [
+            (x - int(10 * scale), y),
+            (x + house_width // 2, y - int(60 * scale)),
+            (x + house_width + int(10 * scale), y)
+        ]
+        pygame.draw.polygon(screen, (180, 90, 50), roof_points)
+        pygame.draw.polygon(screen, (140, 70, 40), roof_points, 2)
+
+        door_rect = pygame.Rect(
+            x + house_width // 2 - int(16 * scale),
+            y + house_height - int(44 * scale),
+            int(32 * scale),
+            int(44 * scale)
+        )
+        pygame.draw.rect(screen, (120, 70, 40), door_rect)
+        pygame.draw.rect(screen, (80, 50, 30), door_rect, 2)
+
+        window_rect = pygame.Rect(
+            x + int(20 * scale),
+            y + int(24 * scale),
+            int(30 * scale),
+            int(24 * scale)
+        )
+        pygame.draw.rect(screen, (190, 220, 250), window_rect)
+        pygame.draw.rect(screen, (120, 90, 70), window_rect, 2)
+
+    def _draw_fence_line(self, screen: pygame.Surface, x: int, y: int, width: int):
+        """Draw a simple fence line across the scene."""
+        post_color = (210, 180, 140)
+        rail_color = (190, 160, 120)
+        for i in range(x, x + width, 80):
+            pygame.draw.rect(screen, post_color, (i, y - 12, 10, 30))
+        pygame.draw.rect(screen, rail_color, (x, y - 6, width, 6))
+        pygame.draw.rect(screen, rail_color, (x, y + 8, width, 6))
+
+    def _draw_cow(self, screen: pygame.Surface, x: int, y: int, scale: float = 1.0):
+        """Draw a simple cow figure."""
+        body_width = int(70 * scale)
+        body_height = int(40 * scale)
+        body_rect = pygame.Rect(x, y, body_width, body_height)
+        pygame.draw.ellipse(screen, (245, 245, 245), body_rect)
+        pygame.draw.ellipse(screen, (30, 30, 30), (x + int(10 * scale), y + int(8 * scale), int(18 * scale), int(14 * scale)))
+        pygame.draw.ellipse(screen, (30, 30, 30), (x + int(36 * scale), y + int(12 * scale), int(20 * scale), int(12 * scale)))
+
+        head_rect = pygame.Rect(x - int(18 * scale), y + int(8 * scale), int(20 * scale), int(18 * scale))
+        pygame.draw.ellipse(screen, (245, 245, 245), head_rect)
+        pygame.draw.circle(screen, (30, 30, 30), (x - int(6 * scale), y + int(16 * scale)), int(3 * scale))
+
+        for leg_offset in [10, 24, 44, 58]:
+            pygame.draw.line(
+                screen,
+                (90, 70, 50),
+                (x + int(leg_offset * scale), y + body_height),
+                (x + int(leg_offset * scale), y + body_height + int(16 * scale)),
+                4
+            )
+
+    def _draw_chicken(self, screen: pygame.Surface, x: int, y: int, scale: float = 1.0):
+        """Draw a simple chicken figure."""
+        pygame.draw.circle(screen, (255, 255, 255), (x, y), int(12 * scale))
+        pygame.draw.circle(screen, (255, 255, 255), (x + int(12 * scale), y - int(4 * scale)), int(8 * scale))
+        pygame.draw.circle(screen, (220, 50, 50), (x + int(18 * scale), y - int(6 * scale)), int(3 * scale))
+        pygame.draw.polygon(screen, (255, 200, 0), [
+            (x + int(20 * scale), y),
+            (x + int(28 * scale), y - int(4 * scale)),
+            (x + int(20 * scale), y - int(8 * scale))
+        ])
+        pygame.draw.line(
+            screen,
+            (150, 100, 50),
+            (x - int(4 * scale), y + int(12 * scale)),
+            (x - int(8 * scale), y + int(18 * scale)),
+            2
+        )
+        pygame.draw.line(
+            screen,
+            (150, 100, 50),
+            (x + int(4 * scale), y + int(12 * scale)),
+            (x + int(8 * scale), y + int(18 * scale)),
+            2
+        )
 
     def _draw_crop(self, screen, x, y):
         """Draw a small crop figure"""

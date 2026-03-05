@@ -18,7 +18,10 @@ class ItemType(Enum):
     """Types of items that can be collected"""
     WOOD = "wood"
     SEED = "seed"
+    CARROT_SEED = "carrot_seed"
     WHEAT = "wheat"
+    CARROT = "carrot"
+    STONE = "stone"
 
 
 class Item:
@@ -57,6 +60,17 @@ class Item:
             pygame.draw.circle(surface, (100, 80, 40), (24, 30), 2)
             pygame.draw.circle(surface, (100, 80, 40), (20, 32), 2)
         
+        elif self.item_type == ItemType.CARROT_SEED:
+            # Draw carrot seed packet
+            pygame.draw.rect(surface, (210, 170, 130), (8, 8, 24, 28), border_radius=2)
+            pygame.draw.rect(surface, (180, 140, 100), (8, 8, 24, 28), 2, border_radius=2)
+            # Packet label (orange)
+            pygame.draw.rect(surface, (240, 140, 40), (10, 12, 20, 10))
+            # Seed dots
+            pygame.draw.circle(surface, (120, 90, 40), (16, 28), 2)
+            pygame.draw.circle(surface, (120, 90, 40), (24, 30), 2)
+            pygame.draw.circle(surface, (120, 90, 40), (20, 32), 2)
+        
         elif self.item_type == ItemType.WHEAT:
             # Draw wheat bundle icon
             # Three wheat stalks
@@ -71,6 +85,26 @@ class Item:
                 pygame.draw.line(surface, (184, 134, 11), (x - 2, 12), (x + 2, 12), 1)
             # Tie/band
             pygame.draw.rect(surface, (139, 90, 43), (10, 28, 20, 4), border_radius=2)
+        
+        elif self.item_type == ItemType.CARROT:
+            # Draw carrot icon
+            pygame.draw.polygon(surface, (240, 140, 40), [(20, 8), (30, 30), (10, 30)])
+            # Leafy top
+            pygame.draw.line(surface, (60, 180, 60), (20, 6), (14, 12), 2)
+            pygame.draw.line(surface, (60, 180, 60), (20, 6), (20, 12), 2)
+            pygame.draw.line(surface, (60, 180, 60), (20, 6), (26, 12), 2)
+        
+        elif self.item_type == ItemType.STONE:
+            # Draw stone icon
+            # Main stone shape
+            pygame.draw.ellipse(surface, (130, 130, 130), (8, 12, 24, 18))
+            # Highlight
+            pygame.draw.ellipse(surface, (160, 160, 160), (10, 14, 12, 8))
+            # Shadow
+            pygame.draw.ellipse(surface, (100, 100, 100), (10, 24, 20, 6))
+            # Cracks
+            pygame.draw.line(surface, (90, 90, 90), (14, 18), (18, 26), 1)
+            pygame.draw.line(surface, (90, 90, 90), (24, 16), (26, 24), 1)
             
         return surface
     
@@ -92,6 +126,12 @@ class Item:
             # Seed packet
             pygame.draw.rect(screen, (200, 180, 150), (x - 8, y - 10, 16, 20), border_radius=2)
             pygame.draw.rect(screen, (50, 150, 50), (x - 6, y - 8, 12, 6))
+        elif self.item_type == ItemType.CARROT_SEED:
+            # Shadow
+            pygame.draw.ellipse(screen, (30, 30, 30), (x - 6, y + 6, 12, 4))
+            # Carrot seed packet
+            pygame.draw.rect(screen, (210, 170, 130), (x - 8, y - 10, 16, 20), border_radius=2)
+            pygame.draw.rect(screen, (240, 140, 40), (x - 6, y - 8, 12, 6))
         elif self.item_type == ItemType.WHEAT:
             # Draw wheat bundle on ground
             # Shadow
@@ -110,6 +150,21 @@ class Item:
                                (x + offset_x - 2, y - 8), (x + offset_x + 2, y - 8), 1)
                 pygame.draw.line(screen, (184, 134, 11), 
                                (x + offset_x - 2, y - 5), (x + offset_x + 2, y - 5), 1)
+        elif self.item_type == ItemType.CARROT:
+            # Shadow
+            pygame.draw.ellipse(screen, (30, 30, 30), (x - 6, y + 6, 12, 4))
+            # Carrot body
+            pygame.draw.polygon(screen, (240, 140, 40), [(x, y - 10), (x + 8, y + 10), (x - 8, y + 10)])
+            # Leafy top
+            pygame.draw.line(screen, (60, 180, 60), (x, y - 12), (x - 4, y - 4), 2)
+            pygame.draw.line(screen, (60, 180, 60), (x, y - 12), (x, y - 4), 2)
+            pygame.draw.line(screen, (60, 180, 60), (x, y - 12), (x + 4, y - 4), 2)
+        elif self.item_type == ItemType.STONE:
+            # Shadow
+            pygame.draw.ellipse(screen, (30, 30, 30), (x - 6, y + 4, 12, 5))
+            # Small stone
+            pygame.draw.ellipse(screen, (130, 130, 130), (x - 6, y - 4, 12, 8))
+            pygame.draw.ellipse(screen, (160, 160, 160), (x - 4, y - 3, 6, 4))
 
     def draw_in_hand(self, screen: pygame.Surface, x: int, y: int, 
                      direction: str, shake_angle: float = 0):
@@ -410,6 +465,22 @@ class Inventory:
                 self.slots[i] = item
                 if item.item_type == ItemType.WOOD:
                     self.wood_count += item.quantity
+                return True
+        
+        return False  # Inventory full
+
+    def add_stone(self, quantity: int = 1) -> bool:
+        """Add stone to inventory. Returns True if successful."""
+        # Try to stack with existing stone in slots 4+
+        for i in range(4, 10):
+            if isinstance(self.slots[i], Item) and self.slots[i].item_type == ItemType.STONE:
+                self.slots[i].quantity += quantity
+                return True
+        
+        # Find empty slot for new stone
+        for i in range(4, 10):
+            if self.slots[i] is None:
+                self.slots[i] = Item(ItemType.STONE, quantity)
                 return True
         
         return False  # Inventory full

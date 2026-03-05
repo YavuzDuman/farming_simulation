@@ -22,31 +22,35 @@ class Tree:
         self.size = size
         self.is_alive = True
         
-        # Chopping mechanics
-        self.max_hits = 10
-        self.current_hits = 0
-        self.shake_offset = 0
-        self.shake_timer = 0
-        
         # Wood drop
         self.wood_dropped = False
         self.wood_x = x
         self.wood_y = y
-        self.wood_quantity = 10
         
         # Set dimensions based on size
         if size == "small":
             self.trunk_width = 12
             self.trunk_height = 30
             self.leaves_radius = 25
+            self.max_hits = 5
+            self.wood_quantity = 5
         elif size == "large":
             self.trunk_width = 20
             self.trunk_height = 50
             self.leaves_radius = 45
+            self.max_hits = 15
+            self.wood_quantity = 20
         else:  # medium
             self.trunk_width = 16
             self.trunk_height = 40
             self.leaves_radius = 35
+            self.max_hits = 10
+            self.wood_quantity = 10
+        
+        # Chopping mechanics
+        self.current_hits = 0
+        self.shake_offset = 0
+        self.shake_timer = 0
         
         # Collision rect (trunk only - player can't walk through trunk)
         self.collision_rect = pygame.Rect(

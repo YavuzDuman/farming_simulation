@@ -52,8 +52,6 @@ class House:
         self.path_cells = [
             (grid_col + 2, grid_row + 1),  # Starts at the door cell (bottom part of house)
             (grid_col + 2, grid_row + 2),  # Directly in front
-            (grid_col + 2, grid_row + 3),  # One more
-            (grid_col + 2, grid_row + 4),  # And another
         ]
         self.path_rects = []
         for col, row in self.path_cells:

@@ -44,7 +44,8 @@ class Chest:
 
         # Inventory (2x5 slots)
         self.slots: List[Optional[Item]] = [None] * 10
-        self.slots[0] = Item(ItemType.SEED, 50)  # Initially 50 seeds
+        self.slots[0] = Item(ItemType.SEED, 50)  # Wheat seeds
+        self.slots[1] = Item(ItemType.CARROT_SEED, 30)  # Carrot seeds
         
         self.is_open = False
         self.inventory_rect = None

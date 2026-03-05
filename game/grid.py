@@ -22,6 +22,12 @@ class PlantState:
     GROWN = 3     # Fully grown wheat
 
 
+class PlantType:
+    """Types of plants that can be grown"""
+    WHEAT = "wheat"
+    CARROT = "carrot"
+
+
 class GridCell:
     """Represents a single cell in the farm grid"""
     
@@ -37,9 +43,16 @@ class GridCell:
         self.is_tilled = False
         # Plant system
         self.plant_state = PlantState.EMPTY
+        self.plant_type = PlantType.WHEAT
         self.plant_time = 0  # Time when seed was planted
         self.has_wheat_dropped = False  # Wheat on ground after harvest
         self.wheat_quantity = 0
+        self.has_carrot_dropped = False  # Carrots on ground after harvest
+        self.carrot_quantity = 0
+        self.has_seed_dropped = False  # Seeds on ground after harvest
+        self.seed_quantity = 0
+        self.has_carrot_seed_dropped = False  # Carrot seeds on ground after harvest
+        self.carrot_seed_quantity = 0
         # Random grass variation for texture
         self.grass_variation = random.randint(0, 3)
         self.grass_blades = self._generate_grass_blades()
@@ -113,25 +126,43 @@ class GridCell:
             if current_time - self.plant_time >= 5:
                 self.plant_state = PlantState.SPROUT
         elif self.plant_state == PlantState.SPROUT:
-            # After 30 seconds total (25 more), become grown
-            if current_time - self.plant_time >= 30:
+            # After growth duration, become grown
+            if current_time - self.plant_time >= self._get_growth_duration():
                 self.plant_state = PlantState.GROWN
 
-    def plant_seed(self):
+    def _get_growth_duration(self) -> float:
+        """Get growth duration based on plant type"""
+        if self.plant_type == PlantType.CARROT:
+            return 30.0
+        return 30.0
+
+    def plant_seed(self, plant_type: str = PlantType.WHEAT):
         """Plant a seed in this cell"""
         if self.is_tilled and self.plant_state == PlantState.EMPTY:
             self.plant_state = PlantState.SEED
+            self.plant_type = plant_type
             self.plant_time = time.time()
             return True
         return False
 
     def harvest(self) -> int:
-        """Harvest the grown plant. Returns wheat quantity."""
+        """Harvest the grown plant. Returns harvest quantity."""
         if self.plant_state == PlantState.GROWN:
             self.plant_state = PlantState.EMPTY
-            self.has_wheat_dropped = True
-            self.wheat_quantity = random.randint(2, 4)  # 2-4 wheat per harvest
-            return self.wheat_quantity
+            harvest_qty = random.randint(2, 4)
+            if self.plant_type == PlantType.CARROT:
+                self.has_carrot_dropped = True
+                self.carrot_quantity = harvest_qty
+                # Random chance to drop carrot seeds (20% chance)
+                self.has_carrot_seed_dropped = random.random() < 0.2
+                self.carrot_seed_quantity = 1 if self.has_carrot_seed_dropped else 0
+            else:
+                self.has_wheat_dropped = True
+                self.wheat_quantity = harvest_qty
+                # Random chance to drop wheat seeds (20% chance)
+                self.has_seed_dropped = random.random() < 0.2
+                self.seed_quantity = 1 if self.has_seed_dropped else 0
+            return harvest_qty
         return 0
 
     def collect_wheat(self) -> int:
@@ -140,6 +171,33 @@ class GridCell:
             qty = self.wheat_quantity
             self.has_wheat_dropped = False
             self.wheat_quantity = 0
+            return qty
+        return 0
+
+    def collect_carrot(self) -> int:
+        """Collect carrots from ground. Returns quantity collected."""
+        if self.has_carrot_dropped:
+            qty = self.carrot_quantity
+            self.has_carrot_dropped = False
+            self.carrot_quantity = 0
+            return qty
+        return 0
+
+    def collect_seed(self) -> int:
+        """Collect wheat seeds from ground. Returns quantity collected."""
+        if self.has_seed_dropped:
+            qty = self.seed_quantity
+            self.has_seed_dropped = False
+            self.seed_quantity = 0
+            return qty
+        return 0
+
+    def collect_carrot_seed(self) -> int:
+        """Collect carrot seeds from ground. Returns quantity collected."""
+        if self.has_carrot_seed_dropped:
+            qty = self.carrot_seed_quantity
+            self.has_carrot_seed_dropped = False
+            self.carrot_seed_quantity = 0
             return qty
         return 0
 
@@ -217,30 +275,89 @@ class GridCell:
             pygame.draw.line(screen, (40, 150, 40), (cx + 3, cy - 2), (cx + 5, cy - 4), 1)
             
         elif self.plant_state == PlantState.GROWN:
-            # Fully grown wheat
-            # Stalks
-            for offset in [-4, 0, 4]:
-                stalk_x = cx + offset
-                # Main stalk
-                pygame.draw.line(screen, (200, 180, 100), 
-                               (stalk_x, cy + 12), (stalk_x, cy - 8), 2)
-                # Wheat head (golden)
-                pygame.draw.ellipse(screen, (218, 165, 32), 
-                                  (stalk_x - 3, cy - 12, 6, 10))
-                # Wheat grains detail
-                for i in range(3):
-                    grain_y = cy - 10 + i * 3
-                    pygame.draw.line(screen, (184, 134, 11), 
-                                   (stalk_x - 2, grain_y), (stalk_x + 2, grain_y), 1)
-                # Leaves
-                pygame.draw.line(screen, (100, 200, 100), 
-                               (stalk_x, cy + 5), (stalk_x - 5, cy + 12), 2)
-                pygame.draw.line(screen, (100, 200, 100), 
-                               (stalk_x, cy + 5), (stalk_x + 5, cy + 12), 2)
+            if self.plant_type == PlantType.CARROT:
+                # Fully grown carrots (leafy tops)
+                for offset in [-5, 0, 5]:
+                    stalk_x = cx + offset
+                    # Leaves
+                    pygame.draw.line(screen, (60, 180, 60),
+                                   (stalk_x, cy + 10), (stalk_x - 4, cy - 6), 3)
+                    pygame.draw.line(screen, (60, 180, 60),
+                                   (stalk_x, cy + 10), (stalk_x, cy - 6), 3)
+                    pygame.draw.line(screen, (60, 180, 60),
+                                   (stalk_x, cy + 10), (stalk_x + 4, cy - 6), 3)
+                    # Carrot tip peeking
+                    pygame.draw.polygon(screen, (240, 140, 40),
+                                      [(stalk_x, cy + 12), (stalk_x + 3, cy + 18), (stalk_x - 3, cy + 18)])
+            else:
+                # Fully grown wheat
+                # Stalks
+                for offset in [-4, 0, 4]:
+                    stalk_x = cx + offset
+                    # Main stalk
+                    pygame.draw.line(screen, (200, 180, 100), 
+                                   (stalk_x, cy + 12), (stalk_x, cy - 8), 2)
+                    # Wheat head (golden)
+                    pygame.draw.ellipse(screen, (218, 165, 32), 
+                                      (stalk_x - 3, cy - 12, 6, 10))
+                    # Wheat grains detail
+                    for i in range(3):
+                        grain_y = cy - 10 + i * 3
+                        pygame.draw.line(screen, (184, 134, 11), 
+                                       (stalk_x - 2, grain_y), (stalk_x + 2, grain_y), 1)
+                    # Leaves
+                    pygame.draw.line(screen, (100, 200, 100), 
+                                   (stalk_x, cy + 5), (stalk_x - 5, cy + 12), 2)
+                    pygame.draw.line(screen, (100, 200, 100), 
+                                   (stalk_x, cy + 5), (stalk_x + 5, cy + 12), 2)
         
         # Draw dropped wheat on ground
         if self.has_wheat_dropped:
             self._draw_wheat_on_ground(screen, cx, cy)
+        
+        # Draw dropped carrots on ground
+        if self.has_carrot_dropped:
+            self._draw_carrot_on_ground(screen, cx, cy)
+        
+        # Draw dropped seeds on ground
+        if self.has_seed_dropped:
+            self._draw_seed_on_ground(screen, cx, cy)
+        
+        # Draw dropped carrot seeds on ground
+        if self.has_carrot_seed_dropped:
+            self._draw_carrot_seed_on_ground(screen, cx, cy)
+
+    def _draw_seed_on_ground(self, screen: pygame.Surface, cx: int, cy: int):
+        """Draw seed packet on the ground"""
+        # Shadow
+        pygame.draw.ellipse(screen, (30, 30, 30), (cx - 6, cy + 6, 12, 4))
+        # Seed packet
+        pygame.draw.rect(screen, (200, 180, 150), (cx - 8, cy - 4, 16, 14), border_radius=2)
+        pygame.draw.rect(screen, (50, 150, 50), (cx - 6, cy - 2, 12, 5))
+
+    def _draw_carrot_seed_on_ground(self, screen: pygame.Surface, cx: int, cy: int):
+        """Draw carrot seed packet on the ground"""
+        # Shadow
+        pygame.draw.ellipse(screen, (30, 30, 30), (cx - 6, cy + 6, 12, 4))
+        # Carrot seed packet
+        pygame.draw.rect(screen, (210, 170, 130), (cx - 8, cy - 4, 16, 14), border_radius=2)
+        pygame.draw.rect(screen, (240, 140, 40), (cx - 6, cy - 2, 12, 5))
+
+    def _draw_carrot_on_ground(self, screen: pygame.Surface, cx: int, cy: int):
+        """Draw carrots on the ground"""
+        # Shadow
+        pygame.draw.ellipse(screen, (30, 30, 30), (cx - 10, cy + 8, 20, 6))
+        
+        # Multiple carrots bundled together
+        for i in range(self.carrot_quantity):
+            offset_x = (i - self.carrot_quantity // 2) * 5
+            # Carrot body
+            pygame.draw.polygon(screen, (240, 140, 40),
+                               [(cx + offset_x, cy - 8), (cx + offset_x + 6, cy + 10), (cx + offset_x - 6, cy + 10)])
+            # Leaves
+            pygame.draw.line(screen, (60, 180, 60), (cx + offset_x, cy - 10), (cx + offset_x - 3, cy - 4), 2)
+            pygame.draw.line(screen, (60, 180, 60), (cx + offset_x, cy - 10), (cx + offset_x, cy - 4), 2)
+            pygame.draw.line(screen, (60, 180, 60), (cx + offset_x, cy - 10), (cx + offset_x + 3, cy - 4), 2)
 
     def _draw_wheat_on_ground(self, screen: pygame.Surface, cx: int, cy: int):
         """Draw wheat bundle on the ground"""
@@ -304,16 +421,22 @@ class Grid:
             return self.cells[row][col]
         return None
     
-    def handle_hover(self, mouse_pos: Tuple[int, int]):
+    def handle_hover(self, mouse_pos: Tuple[int, int], allowed_coords: Optional[set] = None):
         """Handle mouse hover over grid"""
         for row in self.cells:
             for cell in row:
-                cell.is_hovered = cell.rect.collidepoint(mouse_pos)
+                is_hovered = cell.rect.collidepoint(mouse_pos)
+                if allowed_coords is not None:
+                    is_hovered = is_hovered and (cell.col, cell.row) in allowed_coords
+                cell.is_hovered = is_hovered
     
-    def handle_click(self, mouse_pos: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+    def handle_click(self, mouse_pos: Tuple[int, int], allowed_coords: Optional[set] = None) -> Optional[Tuple[int, int]]:
         """Handle mouse click on grid, returns selected cell coordinates"""
         clicked_cell = self.get_cell_at_position(*mouse_pos)
         if clicked_cell:
+            if allowed_coords is not None and (clicked_cell.col, clicked_cell.row) not in allowed_coords:
+                return None
+
             # Deselect previous cell
             if self.selected_cell:
                 prev_col, prev_row = self.selected_cell

@@ -68,7 +68,7 @@ def main():
             if game_manager:
                 if not game_manager.handle_events():
                     running = False
-                game_manager.update()
+                game_manager.update(dt)
                 game_manager.draw()
             else:
                 running = False
