@@ -21,11 +21,11 @@ class House:
         self.grid_row = grid_row
         
         # Calculate pixel position (center of the house base)
-        self.x = grid_offset_x + grid_col * GRID_SIZE + GRID_SIZE * 2  # Center of 4-wide house
+        self.x = grid_offset_x + grid_col * GRID_SIZE + (GRID_SIZE * 5) // 2  # Center of 5-wide house
         self.y = grid_offset_y + grid_row * GRID_SIZE + GRID_SIZE  # Bottom of house
         
         # House dimensions (in grid cells)
-        self.cells_wide = 4
+        self.cells_wide = 5
         self.cells_tall = 3
         self.width = GRID_SIZE * self.cells_wide
         self.height = GRID_SIZE * self.cells_tall
@@ -36,8 +36,8 @@ class House:
         # Components
         self.wall_height = int(self.height * 0.55)
         self.roof_height = int(self.height * 0.45)
-        self.door_width = 28
-        self.door_height = 45
+        self.door_width = 32
+        self.door_height = 48
         
         # Collision rect (the base of the house - full width)
         self.collision_rect = pygame.Rect(
@@ -48,10 +48,12 @@ class House:
         )
         
         # Stone path (grid cells in front of door)
+        # Centered with door at col + 2 for a 5-wide house
         self.path_cells = [
-            (grid_col + 1, grid_row + 2),  # Directly in front
-            (grid_col + 1, grid_row + 3),  # One more
-            (grid_col + 1, grid_row + 4),  # And another
+            (grid_col + 2, grid_row + 1),  # Starts at the door cell (bottom part of house)
+            (grid_col + 2, grid_row + 2),  # Directly in front
+            (grid_col + 2, grid_row + 3),  # One more
+            (grid_col + 2, grid_row + 4),  # And another
         ]
         self.path_rects = []
         for col, row in self.path_cells:
@@ -216,23 +218,23 @@ class House:
                           (door_x + self.door_width - 7, door_y + self.door_height // 2), 4, 1)
         
         # === WINDOWS ===
-        window_width = 28
-        window_height = 32
+        window_width = 30
+        window_height = 36
         window_y = wall_top + 15
         
         # Left window
-        left_window_x = left_x + 25
+        left_window_x = left_x + 30
         self._draw_window(screen, left_window_x, window_y, window_width, window_height)
         
         # Right window
-        right_window_x = right_x - 25 - window_width
+        right_window_x = right_x - 30 - window_width
         self._draw_window(screen, right_window_x, window_y, window_width, window_height)
         
         # === CHIMNEY ===
-        chimney_x = self.x + 50
+        chimney_x = right_x - 40
         chimney_y = top_y + 20
-        chimney_width = 20
-        chimney_height = 45
+        chimney_width = 24
+        chimney_height = 50
         
         # Chimney shadow (3D)
         pygame.draw.rect(screen, (100, 50, 30),

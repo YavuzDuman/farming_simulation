@@ -33,11 +33,11 @@ def main():
     game_manager = None
     menu = None
     
-    def start_game(player_name: str):
-        """Callback to start the game with the given username"""
+    def start_game(player_name: str, shirt_color: tuple):
+        """Callback to start the game with the given username and shirt color"""
         nonlocal current_state, username, game_manager
         username = player_name
-        game_manager = GameManager(screen, username)
+        game_manager = GameManager(screen, username, shirt_color)
         current_state = "playing"
     
     # Create menu with callback

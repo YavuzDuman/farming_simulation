@@ -17,6 +17,8 @@ class ToolType(Enum):
 class ItemType(Enum):
     """Types of items that can be collected"""
     WOOD = "wood"
+    SEED = "seed"
+    WHEAT = "wheat"
 
 
 class Item:
@@ -42,23 +44,130 @@ class Item:
             pygame.draw.line(surface, (100, 65, 30), (24, 16), (24, 28), 1)
             # End grain
             pygame.draw.ellipse(surface, (160, 110, 60), (8, 10, 24, 8))
-            # Quantity text background
-            if self.quantity > 1:
-                pygame.draw.rect(surface, (40, 40, 40), (25, 25, 14, 14), border_radius=3)
         
+        elif self.item_type == ItemType.SEED:
+            # Draw seed packet
+            # Packet body
+            pygame.draw.rect(surface, (200, 180, 150), (8, 8, 24, 28), border_radius=2)
+            pygame.draw.rect(surface, (180, 160, 130), (8, 8, 24, 28), 2, border_radius=2)
+            # Packet label (green)
+            pygame.draw.rect(surface, (50, 150, 50), (10, 12, 20, 10))
+            # Seed dots
+            pygame.draw.circle(surface, (100, 80, 40), (16, 28), 2)
+            pygame.draw.circle(surface, (100, 80, 40), (24, 30), 2)
+            pygame.draw.circle(surface, (100, 80, 40), (20, 32), 2)
+        
+        elif self.item_type == ItemType.WHEAT:
+            # Draw wheat bundle icon
+            # Three wheat stalks
+            for i, offset in enumerate([-8, 0, 8]):
+                x = 20 + offset
+                # Stalk
+                pygame.draw.line(surface, (200, 180, 100), (x, 32), (x, 12), 2)
+                # Head
+                pygame.draw.ellipse(surface, (218, 165, 32), (x - 3, 6, 6, 10))
+                # Grains
+                pygame.draw.line(surface, (184, 134, 11), (x - 2, 8), (x + 2, 8), 1)
+                pygame.draw.line(surface, (184, 134, 11), (x - 2, 12), (x + 2, 12), 1)
+            # Tie/band
+            pygame.draw.rect(surface, (139, 90, 43), (10, 28, 20, 4), border_radius=2)
+            
         return surface
     
     def draw_on_ground(self, screen: pygame.Surface, x: int, y: int):
         """Draw the item on the ground (in a grid cell)"""
-        # Shadow
-        pygame.draw.ellipse(screen, (30, 30, 30), (x - 8, y + 8, 16, 6))
-        # Wood log
-        pygame.draw.ellipse(screen, (139, 90, 43), (x - 10, y - 5, 20, 16))
-        pygame.draw.ellipse(screen, (160, 110, 60), (x - 10, y - 8, 20, 6))
-        # Grain
-        pygame.draw.line(screen, (100, 65, 30), (x - 6, y), (x - 6, y + 8), 1)
-        pygame.draw.line(screen, (100, 65, 30), (x, y - 2), (x, y + 10), 1)
-        pygame.draw.line(screen, (100, 65, 30), (x + 6, y), (x + 6, y + 8), 1)
+        if self.item_type == ItemType.WOOD:
+            # Shadow
+            pygame.draw.ellipse(screen, (30, 30, 30), (x - 8, y + 8, 16, 6))
+            # Wood log
+            pygame.draw.ellipse(screen, (139, 90, 43), (x - 10, y - 5, 20, 16))
+            pygame.draw.ellipse(screen, (160, 110, 60), (x - 10, y - 8, 20, 6))
+            # Grain
+            pygame.draw.line(screen, (100, 65, 30), (x - 6, y), (x - 6, y + 8), 1)
+            pygame.draw.line(screen, (100, 65, 30), (x, y - 2), (x, y + 10), 1)
+            pygame.draw.line(screen, (100, 65, 30), (x + 6, y), (x + 6, y + 8), 1)
+        elif self.item_type == ItemType.SEED:
+            # Shadow
+            pygame.draw.ellipse(screen, (30, 30, 30), (x - 6, y + 6, 12, 4))
+            # Seed packet
+            pygame.draw.rect(screen, (200, 180, 150), (x - 8, y - 10, 16, 20), border_radius=2)
+            pygame.draw.rect(screen, (50, 150, 50), (x - 6, y - 8, 12, 6))
+        elif self.item_type == ItemType.WHEAT:
+            # Draw wheat bundle on ground
+            # Shadow
+            pygame.draw.ellipse(screen, (30, 30, 30), (x - 10, y + 8, 20, 6))
+            # Multiple wheat stalks
+            for i in range(3):
+                offset_x = (i - 1) * 6
+                # Stalk
+                pygame.draw.line(screen, (200, 180, 100), 
+                               (x + offset_x, y + 10), (x + offset_x, y - 5), 2)
+                # Head
+                pygame.draw.ellipse(screen, (218, 165, 32), 
+                                  (x + offset_x - 2, y - 10, 4, 8))
+                # Grains
+                pygame.draw.line(screen, (184, 134, 11), 
+                               (x + offset_x - 2, y - 8), (x + offset_x + 2, y - 8), 1)
+                pygame.draw.line(screen, (184, 134, 11), 
+                               (x + offset_x - 2, y - 5), (x + offset_x + 2, y - 5), 1)
+
+    def draw_in_hand(self, screen: pygame.Surface, x: int, y: int, 
+                     direction: str, shake_angle: float = 0):
+        """Draw the item as if held by the farmer"""
+        import math
+        
+        # Base position (farmer's hand position)
+        hand_x = x
+        hand_y = y
+        
+        # Apply shake rotation
+        angle = shake_angle
+        
+        if self.item_type == ItemType.WOOD:
+            self._draw_wood(screen, hand_x, hand_y, direction, angle)
+        elif self.item_type == ItemType.SEED:
+            self._draw_seeds(screen, hand_x, hand_y, direction, angle)
+
+    def _draw_wood(self, screen, x, y, direction, angle):
+        import math
+        # Wood log is held horizontally
+        length = 20
+        rad = math.radians(angle)
+        
+        # Draw small log
+        # Log body
+        rect_width = 24
+        rect_height = 12
+        
+        # Create a surface for the log to rotate it easily
+        log_surf = pygame.Surface((rect_width, rect_height), pygame.SRCALPHA)
+        pygame.draw.ellipse(log_surf, (139, 90, 43), (0, 0, rect_width, rect_height))
+        # Grain lines
+        pygame.draw.line(log_surf, (100, 65, 30), (4, 3), (4, 9), 1)
+        pygame.draw.line(log_surf, (100, 65, 30), (12, 2), (12, 10), 1)
+        pygame.draw.line(log_surf, (100, 65, 30), (20, 3), (20, 9), 1)
+        
+        # Rotate and blit
+        rotated_log = pygame.transform.rotate(log_surf, -angle)
+        log_rect = rotated_log.get_rect(center=(x, y))
+        screen.blit(rotated_log, log_rect)
+
+    def _draw_seeds(self, screen, x, y, direction, angle):
+        import math
+        # Seed packet is held pointing up
+        rad = math.radians(angle)
+        
+        # Create a surface for the packet
+        rect_width = 16
+        rect_height = 22
+        packet_surf = pygame.Surface((rect_width, rect_height), pygame.SRCALPHA)
+        pygame.draw.rect(packet_surf, (200, 180, 150), (0, 0, rect_width, rect_height), border_radius=2)
+        pygame.draw.rect(packet_surf, (50, 150, 50), (2, 4, 12, 8))
+        
+        # Rotate and blit
+        rotated_packet = pygame.transform.rotate(packet_surf, -angle)
+        packet_rect = rotated_packet.get_rect(center=(x, y))
+        screen.blit(rotated_packet, packet_rect)
 
 
 class Tool:
@@ -285,6 +394,26 @@ class Inventory:
         if 0 <= slot_index < len(self.slots):
             self.selected_slot = slot_index
     
+    def add_item(self, item: Item) -> bool:
+        """Add any item to inventory. Returns True if successful."""
+        # Try to stack if it's the same type
+        for i in range(4, 10):
+            if isinstance(self.slots[i], Item) and self.slots[i].item_type == item.item_type:
+                self.slots[i].quantity += item.quantity
+                if item.item_type == ItemType.WOOD:
+                    self.wood_count += item.quantity
+                return True
+        
+        # Find empty slot
+        for i in range(4, 10):
+            if self.slots[i] is None:
+                self.slots[i] = item
+                if item.item_type == ItemType.WOOD:
+                    self.wood_count += item.quantity
+                return True
+        
+        return False  # Inventory full
+
     def add_wood(self, quantity: int = 1) -> bool:
         """Add wood to inventory. Returns True if successful."""
         # Try to stack with existing wood in slots 4+

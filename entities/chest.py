@@ -2,15 +2,16 @@
 Chest Entity - Grid-sized treasure chest
 """
 import pygame
-from typing import Tuple
+from typing import Tuple, List, Optional
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import CHEST_WOOD, CHEST_GOLD, GRID_SIZE
+from config import CHEST_WOOD, CHEST_GOLD, GRID_SIZE, SCREEN_WIDTH, SCREEN_HEIGHT
+from game.inventory import Item, ItemType
 
 
 class Chest:
-    """A wooden chest that fills one grid cell"""
+    """A wooden chest that fills one grid cell with internal inventory"""
     
     def __init__(self, grid_col: int, grid_row: int, grid_offset_x: int, grid_offset_y: int):
         # Position at center of grid cell
@@ -40,7 +41,109 @@ class Chest:
             self.width,
             self.height
         )
+
+        # Inventory (2x5 slots)
+        self.slots: List[Optional[Item]] = [None] * 10
+        self.slots[0] = Item(ItemType.SEED, 50)  # Initially 50 seeds
+        
+        self.is_open = False
+        self.inventory_rect = None
+        self.slot_size = 48
+        self.slot_spacing = 8
     
+    def toggle_inventory(self):
+        """Toggle the chest inventory display"""
+        self.is_open = not self.is_open
+
+    def handle_click(self, mouse_pos: Tuple[int, int]) -> Optional[Item]:
+        """Handle click on chest inventory slots. Returns item if clicked."""
+        if not self.is_open or not self.inventory_rect:
+            return None
+        
+        x, y = mouse_pos
+        if not self.inventory_rect.collidepoint(x, y):
+            # Clicked outside inventory, maybe close it?
+            # For now, let GameManager handle closing if needed
+            return None
+            
+        # Check each slot
+        cols = 5
+        rows = 2
+        start_x = self.inventory_rect.x + 10
+        start_y = self.inventory_rect.y + 35 # Leave space for title
+        
+        for row in range(rows):
+            for col in range(cols):
+                idx = row * cols + col
+                slot_x = start_x + col * (self.slot_size + self.slot_spacing)
+                slot_y = start_y + row * (self.slot_size + self.slot_spacing)
+                slot_rect = pygame.Rect(slot_x, slot_y, self.slot_size, self.slot_size)
+                
+                if slot_rect.collidepoint(x, y):
+                    item = self.slots[idx]
+                    if item:
+                        self.slots[idx] = None # Take the item
+                        return item
+        return None
+
+    def draw_inventory(self, screen: pygame.Surface):
+        """Draw the 2x5 chest inventory"""
+        if not self.is_open:
+            return
+            
+        cols = 5
+        rows = 2
+        inv_width = cols * self.slot_size + (cols + 1) * self.slot_spacing + 20
+        inv_height = rows * self.slot_size + (rows + 1) * self.slot_spacing + 40
+        
+        # Center on screen
+        inv_x = (SCREEN_WIDTH - inv_width) // 2
+        inv_y = (SCREEN_HEIGHT - inv_height) // 2
+        self.inventory_rect = pygame.Rect(inv_x, inv_y, inv_width, inv_height)
+        
+        # Draw background
+        pygame.draw.rect(screen, (50, 40, 30), self.inventory_rect, border_radius=10)
+        pygame.draw.rect(screen, (100, 80, 60), self.inventory_rect, 3, border_radius=10)
+        
+        # Title
+        font = pygame.font.SysFont('Arial', 20, bold=True)
+        title = font.render("Chest Inventory", True, (255, 255, 255))
+        screen.blit(title, (inv_x + 15, inv_y + 10))
+        
+        # Close help
+        small_font = pygame.font.SysFont('Arial', 12)
+        help_text = small_font.render("Right-click chest to close", True, (200, 200, 200))
+        screen.blit(help_text, (inv_x + inv_width - 130, inv_y + 12))
+        
+        # Draw slots
+        start_x = inv_x + 10
+        start_y = inv_y + 35
+        
+        for row in range(rows):
+            for col in range(cols):
+                idx = row * cols + col
+                slot_x = start_x + col * (self.slot_size + self.slot_spacing)
+                slot_y = start_y + row * (self.slot_size + self.slot_spacing)
+                slot_rect = pygame.Rect(slot_x, slot_y, self.slot_size, self.slot_size)
+                
+                # Slot background
+                pygame.draw.rect(screen, (30, 25, 20), slot_rect, border_radius=5)
+                pygame.draw.rect(screen, (70, 60, 50), slot_rect, 1, border_radius=5)
+                
+                # Draw item
+                item = self.slots[idx]
+                if item:
+                    # Draw item icon centered in slot
+                    icon = item.icon
+                    icon_rect = icon.get_rect(center=slot_rect.center)
+                    screen.blit(icon, icon_rect)
+                    
+                    # Quantity
+                    if item.quantity > 1:
+                        qty_font = pygame.font.SysFont('Arial', 14, bold=True)
+                        qty_text = qty_font.render(str(item.quantity), True, (255, 255, 255))
+                        screen.blit(qty_text, (slot_x + self.slot_size - 18, slot_y + self.slot_size - 18))
+
     @property
     def sort_y(self) -> int:
         """Y position for depth sorting (bottom of chest)"""

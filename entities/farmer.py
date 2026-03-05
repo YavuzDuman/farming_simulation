@@ -13,7 +13,7 @@ from config import PLAYER_SPEED, PLAYER_SIZE, GRID_SIZE, GRID_COLS, GRID_ROWS, G
 class Farmer:
     """The player-controlled farmer character with realistic appearance"""
     
-    def __init__(self, x: int, y: int):
+    def __init__(self, x: int, y: int, shirt_color: Tuple[int, int, int] = (70, 130, 180)):
         self.x = x
         self.y = y
         self.width = PLAYER_SIZE
@@ -28,8 +28,8 @@ class Farmer:
         self.skin_color = (255, 218, 185)  # Peach skin
         self.skin_shadow = (235, 190, 155)
         self.hair_color = (101, 67, 33)  # Brown hair
-        self.shirt_color = (70, 130, 180)  # Steel blue shirt
-        self.shirt_shadow = (50, 100, 150)
+        self.shirt_color = shirt_color  # Custom shirt color
+        self.shirt_shadow = (max(0, shirt_color[0]-30), max(0, shirt_color[1]-30), max(0, shirt_color[2]-30))
         self.pants_color = (85, 85, 85)  # Dark gray pants
         self.pants_shadow = (60, 60, 60)
         self.boots_color = (101, 67, 33)  # Brown boots
@@ -39,6 +39,8 @@ class Farmer:
         # Tool holding
         self.held_tool = None
         self.tool_shake_angle = 0
+        self.tool_swing_frame = 0
+        self.is_swinging = False
         
         # Hand positions for tool holding (relative to farmer center)
         self.hand_positions = {
@@ -48,6 +50,12 @@ class Farmer:
             'right': (10, 0)
         }
     
+    def start_tool_swing(self):
+        """Start the tool swing animation"""
+        if not self.is_swinging:
+            self.is_swinging = True
+            self.tool_swing_frame = 0
+
     @property
     def rect(self) -> pygame.Rect:
         """Get the rectangle for collision detection (feet area)"""
@@ -107,14 +115,27 @@ class Farmer:
         """Draw the realistic farmer character"""
         self.frame_count += 1
         
+        # Handle tool swinging animation
+        if self.is_swinging:
+            self.tool_swing_frame += 1
+            # Swing logic: 0 -> 45 -> 0 degrees over 12 frames
+            if self.tool_swing_frame <= 6:
+                self.tool_shake_angle = self.tool_swing_frame * 10
+            elif self.tool_swing_frame <= 12:
+                self.tool_shake_angle = 60 - (self.tool_swing_frame - 6) * 10
+            else:
+                self.is_swinging = False
+                self.tool_swing_frame = 0
+                self.tool_shake_angle = 0
+
         # Walking bob effect
         bob = 0
         leg_offset = 0
         arm_offset = 0
         if self.is_moving:
-            bob = int(abs(math.sin(self.walk_cycle * math.pi / 2)) * 1.5)
-            leg_offset = int(math.sin(self.walk_cycle * math.pi) * 4)
-            arm_offset = int(math.sin(self.walk_cycle * math.pi) * 3)
+            bob = int(abs(math.sin(self.walk_cycle * math.pi / 2)) * 2) # Increased bob for realism
+            leg_offset = int(math.sin(self.walk_cycle * math.pi) * 5) # Slightly wider stride
+            arm_offset = int(math.sin(self.walk_cycle * math.pi) * 4)
         
         cx = self.x + self.width // 2  # Center X
         base_y = self.y + self.height - bob  # Base Y (feet level)

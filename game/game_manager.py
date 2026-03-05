@@ -17,7 +17,7 @@ from entities.tree import Tree
 from entities.house import House
 from entities.chest import Chest
 from ui.game_ui import GameUI
-from game.inventory import Inventory, ToolType
+from game.inventory import Inventory, ToolType, ItemType, Item
 
 
 class GameState:
@@ -30,7 +30,7 @@ class GameState:
 class GameManager:
     """Manages the main game state and logic with Y-sorting for depth"""
     
-    def __init__(self, screen: pygame.Surface, username: str):
+    def __init__(self, screen: pygame.Surface, username: str, shirt_color: tuple = (70, 130, 180)):
         self.screen = screen
         self.username = username
         self.clock = pygame.time.Clock()
@@ -40,7 +40,8 @@ class GameManager:
         self.grid = Grid()
         self.farmer = Farmer(
             x=GRID_OFFSET_X + GRID_COLS * GRID_SIZE // 2 - 18,
-            y=GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE // 2 - 20
+            y=GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE // 2 - 20,
+            shirt_color=shirt_color
         )
         self.player = Player(self.farmer)
         self.ui = GameUI(username)
@@ -112,19 +113,37 @@ class GameManager:
     
     def _on_inventory_slot_click(self, slot_index: int):
         """Called when an inventory slot is clicked"""
-        # Update farmer's held tool
-        tool = self.inventory.get_selected_tool()
-        self.farmer.held_tool = tool
+        # Update farmer's held tool/item
+        self.farmer.held_tool = self.inventory.get_selected_tool()
     
     def _use_tool(self, mouse_pos: tuple[int, int]):
-        """Use the currently selected tool"""
-        tool = self.inventory.get_selected_tool()
-        if not tool:
+        """Use the currently selected tool/item"""
+        selected = self.inventory.get_selected_tool()
+        if not selected:
             return
         
-        # Start shake animation
-        self.inventory.start_shake()
-        self.farmer.tool_shake_angle = self.inventory.get_shake_angle()
+        # Check if it's a seed item
+        if isinstance(selected, Item) and selected.item_type == ItemType.SEED:
+            # Try to plant seed on tilled cell
+            cell = self.grid.get_cell_at_position(*mouse_pos)
+            if cell and cell.is_tilled and cell.plant_state == 0:  # EMPTY = 0
+                if cell.plant_seed():
+                    # Consume one seed
+                    selected.quantity -= 1
+                    if selected.quantity <= 0:
+                        # Remove seed from inventory
+                        self.inventory.slots[self.inventory.selected_slot] = None
+                        self.farmer.held_tool = None
+                    return
+            return
+        
+        # Only allow using tools (not items like wood or wheat)
+        if not hasattr(selected, 'tool_type'):
+            return
+        
+        tool = selected
+        # Start swing animation
+        self.farmer.start_tool_swing()
         
         # Handle hoe tilling
         if tool.tool_type == ToolType.HOE:
@@ -164,6 +183,29 @@ class GameManager:
                         tree.wood_dropped = True
                         tree.wood_quantity = wood_collected
                 break
+
+    def _harvest_plant(self, mouse_pos: tuple[int, int]):
+        """Harvest a grown plant on right-click"""
+        cell = self.grid.get_cell_at_position(*mouse_pos)
+        if cell and cell.plant_state == 3:  # GROWN = 3
+            wheat_qty = cell.harvest()
+            if wheat_qty > 0:
+                # Wheat is now on the ground in this cell
+                pass
+
+    def _check_wheat_collection(self, mouse_pos: tuple[int, int]):
+        """Check if hovering over wheat on ground and collect it"""
+        cell = self.grid.get_cell_at_position(*mouse_pos)
+        if cell and cell.has_wheat_dropped:
+            wheat_qty = cell.collect_wheat()
+            if wheat_qty > 0:
+                # Add wheat to inventory
+                wheat_item = Item(ItemType.WHEAT, wheat_qty)
+                success = self.inventory.add_item(wheat_item)
+                if not success:
+                    # Return wheat to ground if inventory full
+                    cell.has_wheat_dropped = True
+                    cell.wheat_quantity = wheat_qty
     
     def handle_events(self) -> bool:
         """Handle game events, returns False if game should quit"""
@@ -185,8 +227,26 @@ class GameManager:
                 self.grid.handle_hover(event.pos)
                 # Check for wood collection on hover
                 self._check_wood_collection(event.pos)
+                # Check for wheat collection on hover
+                self._check_wheat_collection(event.pos)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
+                    # Check if chest inventory is open and clicked
+                    if self.chest and self.chest.is_open:
+                        item = self.chest.handle_click(event.pos)
+                        if item:
+                            # Transfer to player inventory
+                            success = self.inventory.add_item(item)
+                            if not success:
+                                # Return to chest if inventory full
+                                for i in range(10):
+                                    if self.chest.slots[i] is None:
+                                        self.chest.slots[i] = item
+                                        break
+                            # Update farmer's hand
+                            self.farmer.held_tool = self.inventory.get_selected_tool()
+                            continue
+
                     # Check if inventory was clicked
                     if self.inventory_rect and self.inventory_rect.collidepoint(event.pos):
                         if self.inventory.handle_click(event.pos, self.inventory_rect):
@@ -196,6 +256,16 @@ class GameManager:
                         self._use_tool(event.pos)
                         # Also handle grid selection
                         self.grid.handle_click(event.pos)
+                
+                elif event.button == 3:  # Right click
+                    # Check if clicking on chest
+                    if self.chest:
+                        if self.chest.render_rect.collidepoint(event.pos):
+                            self.chest.toggle_inventory()
+                            continue
+                    
+                    # Try to harvest a grown plant
+                    self._harvest_plant(event.pos)
         
         # Handle continuous key presses for movement
         keys = pygame.key.get_pressed()
@@ -223,12 +293,13 @@ class GameManager:
         # Update inventory animations
         self.inventory.update()
         
-        # Update farmer's tool shake angle
-        self.farmer.tool_shake_angle = self.inventory.get_shake_angle()
-        
         # Update trees (for shake animation)
         for tree in self.trees:
             tree.update()
+        
+        # Update grid (plant growth)
+        import time
+        self.grid.update(time.time())
     
     def draw(self):
         """Draw the game with proper Y-sorting for depth"""
@@ -275,6 +346,10 @@ class GameManager:
         
         # Draw UI on top
         self.ui.draw(self.screen)
+        
+        # Draw chest inventory if open
+        if self.chest and self.chest.is_open:
+            self.chest.draw_inventory(self.screen)
         
         # Draw inventory at bottom of screen (10 slots)
         slot_total_width = 10 * 45 + 9 * 8  # 10 slots with spacing
