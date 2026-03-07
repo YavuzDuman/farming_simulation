@@ -4,7 +4,10 @@ Game Manager - Handles game state and main game loop with Y-sorting
 import pygame
 import random
 import time
-from typing import Optional, List
+import json
+import sqlite3
+from datetime import datetime
+from typing import Optional, List, Dict, Any
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -39,11 +42,12 @@ class GameState:
 class GameManager:
     """Manages the main game state and logic with Y-sorting for depth"""
     
-    def __init__(self, screen: pygame.Surface, username: str, shirt_color: tuple = (70, 130, 180)):
+    def __init__(self, screen: pygame.Surface, username: str, shirt_color: tuple = (70, 130, 180), save_id: Optional[int] = None):
         self.screen = screen
         self.username = username
         self.clock = pygame.time.Clock()
         self.running = True
+        self.save_id = save_id
         
         # Initialize game components
         self.grid = Grid()
@@ -54,6 +58,8 @@ class GameManager:
         )
         self.player = Player(self.farmer)
         self.ui = GameUI(username)
+        if self.save_id is not None:
+            self.ui.save_button.text = "Save Update"
         
         # Initialize inventory system
         self.inventory = Inventory()
@@ -83,6 +89,9 @@ class GameManager:
             GRID_COLS * GRID_SIZE,
             GRID_ROWS * GRID_SIZE
         )
+
+        if self.save_id is not None:
+            self.load_game(self.save_id)
     
     def _create_farm_objects(self):
         """Create trees, house, chest, and stones on the farm"""
@@ -225,6 +234,283 @@ class GameManager:
                 if 0 <= col < GRID_COLS and 0 <= row < GRID_ROWS:
                     allowed_coords.add((col, row))
         return allowed_coords
+
+    def _get_save_db_path(self) -> str:
+        """Get the sqlite path for saves."""
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base_dir, "saves.db")
+
+    def _ensure_save_table(self, conn: sqlite3.Connection):
+        """Ensure the saves table exists."""
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS saves (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                data TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+    def _serialize_inventory(self) -> List[Dict[str, Any]]:
+        """Serialize inventory slots for saving."""
+        slots_data: List[Dict[str, Any]] = []
+        for slot in self.inventory.slots:
+            if slot is None:
+                slots_data.append({"type": None})
+            elif isinstance(slot, Item):
+                slots_data.append({
+                    "type": "item",
+                    "item_type": slot.item_type.value,
+                    "quantity": slot.quantity
+                })
+            else:
+                slots_data.append({
+                    "type": "tool",
+                    "tool_type": slot.tool_type.value
+                })
+        return slots_data
+
+    def _apply_inventory_state(self, slots_data: List[Dict[str, Any]]):
+        """Apply inventory slots from saved data."""
+        if not slots_data:
+            return
+        new_slots: List[Optional[object]] = []
+        for slot in slots_data:
+            if slot.get("type") is None:
+                new_slots.append(None)
+            elif slot.get("type") == "item":
+                item_type = ItemType(slot["item_type"])
+                new_slots.append(Item(item_type, slot.get("quantity", 1)))
+            elif slot.get("type") == "tool":
+                tool_type = ToolType(slot["tool_type"])
+                new_slots.append(self.inventory._create_tool_from_type(tool_type))
+        if len(new_slots) == len(self.inventory.slots):
+            self.inventory.slots = new_slots
+            self.inventory.selected_slot = min(self.inventory.selected_slot, len(new_slots) - 1)
+            self.farmer.held_tool = self.inventory.get_selected_tool()
+
+    def _serialize_grid(self) -> List[Dict[str, Any]]:
+        """Serialize grid cell state for saving."""
+        grid_data: List[Dict[str, Any]] = []
+        for row in self.grid.cells:
+            for cell in row:
+                grid_data.append({
+                    "col": cell.col,
+                    "row": cell.row,
+                    "is_tilled": cell.is_tilled,
+                    "plant_state": cell.plant_state,
+                    "plant_type": cell.plant_type,
+                    "plant_time": cell.plant_time,
+                    "has_wheat_dropped": cell.has_wheat_dropped,
+                    "wheat_quantity": cell.wheat_quantity,
+                    "has_carrot_dropped": cell.has_carrot_dropped,
+                    "carrot_quantity": cell.carrot_quantity,
+                    "has_seed_dropped": cell.has_seed_dropped,
+                    "seed_quantity": cell.seed_quantity,
+                    "has_carrot_seed_dropped": cell.has_carrot_seed_dropped,
+                    "carrot_seed_quantity": cell.carrot_seed_quantity
+                })
+        return grid_data
+
+    def _apply_grid_state(self, grid_data: List[Dict[str, Any]]):
+        """Apply grid cell state from saved data."""
+        for cell_data in grid_data:
+            col = cell_data.get("col")
+            row = cell_data.get("row")
+            if col is None or row is None:
+                continue
+            cell = self.grid.get_cell(col, row)
+            if not cell:
+                continue
+            cell.is_tilled = cell_data.get("is_tilled", False)
+            cell.plant_state = cell_data.get("plant_state", 0)
+            cell.plant_type = cell_data.get("plant_type", "wheat")
+            cell.plant_time = cell_data.get("plant_time", 0)
+            cell.has_wheat_dropped = cell_data.get("has_wheat_dropped", False)
+            cell.wheat_quantity = cell_data.get("wheat_quantity", 0)
+            cell.has_carrot_dropped = cell_data.get("has_carrot_dropped", False)
+            cell.carrot_quantity = cell_data.get("carrot_quantity", 0)
+            cell.has_seed_dropped = cell_data.get("has_seed_dropped", False)
+            cell.seed_quantity = cell_data.get("seed_quantity", 0)
+            cell.has_carrot_seed_dropped = cell_data.get("has_carrot_seed_dropped", False)
+            cell.carrot_seed_quantity = cell_data.get("carrot_seed_quantity", 0)
+
+    def _serialize_entities(self) -> Dict[str, Any]:
+        """Serialize trees, stones, chest, and farmer state."""
+        return {
+            "farmer": {
+                "x": self.farmer.x,
+                "y": self.farmer.y,
+                "direction": self.farmer.direction,
+                "shirt_color": self.farmer.shirt_color
+            },
+            "trees": [
+                {
+                    "x": tree.x,
+                    "y": tree.y,
+                    "size": tree.size,
+                    "is_alive": tree.is_alive,
+                    "current_hits": tree.current_hits,
+                    "wood_dropped": tree.wood_dropped,
+                    "wood_quantity": tree.wood_quantity,
+                    "grid_col": tree.grid_col,
+                    "grid_row": tree.grid_row
+                }
+                for tree in self.trees
+            ],
+            "stones": [
+                {
+                    "grid_col": stone.grid_col,
+                    "grid_row": stone.grid_row,
+                    "size": stone.size,
+                    "is_alive": stone.is_alive,
+                    "current_hits": stone.current_hits,
+                    "stone_dropped": stone.stone_dropped,
+                    "stone_quantity": stone.stone_quantity
+                }
+                for stone in self.stones
+            ],
+            "chest": {
+                "grid_col": self.chest.grid_col if self.chest else 0,
+                "grid_row": self.chest.grid_row if self.chest else 0,
+                "is_open": self.chest.is_open if self.chest else False,
+                "slots": [
+                    None if slot is None else {
+                        "item_type": slot.item_type.value,
+                        "quantity": slot.quantity
+                    }
+                    for slot in (self.chest.slots if self.chest else [])
+                ]
+            }
+        }
+
+    def _apply_entities_state(self, data: Dict[str, Any]):
+        """Apply entity state from saved data."""
+        farmer_data = data.get("farmer", {})
+        if farmer_data:
+            self.farmer.x = farmer_data.get("x", self.farmer.x)
+            self.farmer.y = farmer_data.get("y", self.farmer.y)
+            self.farmer.direction = farmer_data.get("direction", self.farmer.direction)
+            shirt_color = farmer_data.get("shirt_color")
+            if shirt_color:
+                self.farmer.shirt_color = tuple(shirt_color)
+
+        self.trees = []
+        for tree_data in data.get("trees", []):
+            tree = Tree(tree_data["x"], tree_data["y"], tree_data.get("size", "medium"))
+            tree.is_alive = tree_data.get("is_alive", True)
+            tree.current_hits = tree_data.get("current_hits", 0)
+            tree.wood_dropped = tree_data.get("wood_dropped", False)
+            tree.wood_quantity = tree_data.get("wood_quantity", tree.wood_quantity)
+            tree.grid_col = tree_data.get("grid_col", tree.grid_col)
+            tree.grid_row = tree_data.get("grid_row", tree.grid_row)
+            if tree.wood_dropped:
+                tree.wood_x = tree.x
+                tree.wood_y = tree.y
+            self.trees.append(tree)
+
+        self.stones = []
+        for stone_data in data.get("stones", []):
+            stone = Stone(stone_data["grid_col"], stone_data["grid_row"], stone_data.get("size", "medium"))
+            stone.is_alive = stone_data.get("is_alive", True)
+            stone.current_hits = stone_data.get("current_hits", 0)
+            stone.stone_dropped = stone_data.get("stone_dropped", False)
+            stone.stone_quantity = stone_data.get("stone_quantity", stone.stone_quantity)
+            if stone.stone_dropped:
+                stone.stone_x = stone.x
+                stone.stone_y = stone.y
+            self.stones.append(stone)
+
+        chest_data = data.get("chest")
+        if chest_data and self.chest:
+            self.chest.grid_col = chest_data.get("grid_col", self.chest.grid_col)
+            self.chest.grid_row = chest_data.get("grid_row", self.chest.grid_row)
+            self.chest.x = GRID_OFFSET_X + self.chest.grid_col * GRID_SIZE + GRID_SIZE // 2
+            self.chest.y = GRID_OFFSET_Y + self.chest.grid_row * GRID_SIZE + GRID_SIZE // 2
+            self.chest.render_rect = pygame.Rect(
+                self.chest.x - self.chest.width // 2,
+                self.chest.y - self.chest.height // 2,
+                self.chest.width,
+                self.chest.height
+            )
+            self.chest.collision_rect = pygame.Rect(
+                GRID_OFFSET_X + self.chest.grid_col * GRID_SIZE,
+                GRID_OFFSET_Y + self.chest.grid_row * GRID_SIZE,
+                GRID_SIZE,
+                GRID_SIZE
+            )
+            self.chest.is_open = chest_data.get("is_open", False)
+            slots_data = chest_data.get("slots", [])
+            if slots_data:
+                new_slots = []
+                for slot in slots_data:
+                    if slot is None:
+                        new_slots.append(None)
+                    else:
+                        new_slots.append(Item(ItemType(slot["item_type"]), slot.get("quantity", 1)))
+                if len(new_slots) == len(self.chest.slots):
+                    self.chest.slots = new_slots
+
+    def _build_save_payload(self) -> Dict[str, Any]:
+        """Build the save payload for persistence."""
+        return {
+            "player": {
+                "username": self.username
+            },
+            "inventory": self._serialize_inventory(),
+            "grid": self._serialize_grid(),
+            "entities": self._serialize_entities(),
+            "selected_slot": self.inventory.selected_slot
+        }
+
+    def save_game(self):
+        """Save current game state to sqlite."""
+        db_path = self._get_save_db_path()
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        payload = self._build_save_payload()
+        now = datetime.utcnow().isoformat()
+        with sqlite3.connect(db_path) as conn:
+            self._ensure_save_table(conn)
+            if self.save_id is None:
+                cursor = conn.execute(
+                    "INSERT INTO saves (name, created_at, updated_at, data) VALUES (?, ?, ?, ?)",
+                    (self.username, now, now, json.dumps(payload))
+                )
+                self.save_id = cursor.lastrowid
+                self.ui.save_button.text = "Save Update"
+            else:
+                conn.execute(
+                    "UPDATE saves SET name = ?, updated_at = ?, data = ? WHERE id = ?",
+                    (self.username, now, json.dumps(payload), self.save_id)
+                )
+            conn.commit()
+
+    def load_game(self, save_id: int) -> bool:
+        """Load game state from sqlite."""
+        db_path = self._get_save_db_path()
+        if not os.path.exists(db_path):
+            return False
+        with sqlite3.connect(db_path) as conn:
+            self._ensure_save_table(conn)
+            row = conn.execute(
+                "SELECT data FROM saves WHERE id = ?",
+                (save_id,)
+            ).fetchone()
+        if not row:
+            return False
+        data = json.loads(row[0])
+        self.username = data.get("player", {}).get("username", self.username)
+        self.ui.username = self.username
+        self.inventory.selected_slot = data.get("selected_slot", self.inventory.selected_slot)
+        self._apply_inventory_state(data.get("inventory", []))
+        self._apply_grid_state(data.get("grid", []))
+        self._apply_entities_state(data.get("entities", {}))
+        self.ui.save_button.text = "Save Update"
+        return True
 
     def _use_tool(self, mouse_pos: tuple[int, int]):
         """Use the currently selected tool/item"""
@@ -402,14 +688,19 @@ class GameManager:
                     cell.has_carrot_seed_dropped = True
                     cell.carrot_seed_quantity = seed_qty
     
-    def handle_events(self) -> bool:
-        """Handle game events, returns False if game should quit"""
+    def handle_events(self) -> str:
+        """Handle game events, returns 'quit', 'menu', or 'continue'"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return False
+                return "quit"
+            ui_action = self.ui.handle_event(event)
+            if ui_action == "save":
+                self.save_game()
+            elif ui_action == "menu":
+                return "menu"
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    return False  # Exit game
+                    return "menu"
                 # Number keys for quick slot selection (0-9)
                 if pygame.K_0 <= event.key <= pygame.K_9:
                     if event.key == pygame.K_0:
@@ -615,4 +906,4 @@ class GameManager:
             self.update(dt)
             self.draw()
         
-        return True  # Game finished normally
+        return "continue"

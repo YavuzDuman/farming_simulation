@@ -2,13 +2,15 @@
 Main Menu UI
 """
 import pygame
-from typing import Callable, Optional
+import sqlite3
+import json
+from typing import Callable, Optional, List, Dict
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, BLACK, GREEN, DARK_GREEN, 
-    YELLOW, GRAY, LIGHT_GRAY, MENU_TITLE_SIZE, MENU_BUTTON_SIZE, FONT_NAME
+    YELLOW, GRAY, LIGHT_GRAY, MENU_TITLE_SIZE, MENU_BUTTON_SIZE, FONT_NAME, SKY_BLUE
 )
 
 
@@ -109,13 +111,14 @@ class TextInput:
 class Menu:
     """Main menu screen"""
     
-    def __init__(self, on_start_game: Callable[[str, tuple], None]):
+    def __init__(self, on_start_game: Callable[[str, tuple, Optional[int]], None]):
         self.on_start_game = on_start_game
         
         # Fonts
         self.title_font = pygame.font.SysFont(FONT_NAME, MENU_TITLE_SIZE, bold=True)
         self.button_font = pygame.font.SysFont(FONT_NAME, MENU_BUTTON_SIZE)
         self.input_font = pygame.font.SysFont(FONT_NAME, MENU_BUTTON_SIZE)
+        self.save_list_font = pygame.font.SysFont(FONT_NAME, 24)
         
         # Title
         self.title_text = "Farm Life"
@@ -124,7 +127,7 @@ class Menu:
         input_width = 300
         input_height = 50
         input_x = (SCREEN_WIDTH - input_width) // 2
-        input_y = SCREEN_HEIGHT // 2 - 100
+        input_y = SCREEN_HEIGHT // 2 - 120
         self.username_input = TextInput(input_x, input_y, input_width, input_height)
         
         # Shirt color selection
@@ -142,21 +145,41 @@ class Menu:
         swatch_spacing = 15
         total_swatches_width = len(self.shirt_colors) * swatch_size + (len(self.shirt_colors) - 1) * swatch_spacing
         start_x = (SCREEN_WIDTH - total_swatches_width) // 2
-        swatch_y = SCREEN_HEIGHT // 2 + 30
+        swatch_y = SCREEN_HEIGHT // 2 + 60
         
         for i, color in enumerate(self.shirt_colors):
             rect = pygame.Rect(start_x + i * (swatch_size + swatch_spacing), swatch_y, swatch_size, swatch_size)
             self.color_swatches.append(rect)
 
-        # Start button
+        # Start and load buttons
         button_width = 200
         button_height = 50
-        button_x = (SCREEN_WIDTH - button_width) // 2
-        button_y = SCREEN_HEIGHT // 2 + 120
+        button_y = SCREEN_HEIGHT // 2 + 140
+        button_spacing = 20
+        total_button_width = button_width * 2 + button_spacing
+        button_x = (SCREEN_WIDTH - total_button_width) // 2
         self.start_button = Button(
             button_x, button_y, button_width, button_height,
-            "Start Game", GREEN, DARK_GREEN
+            "Start New Game", GREEN, DARK_GREEN
         )
+        self.load_button = Button(
+            button_x + button_width + button_spacing, button_y, button_width, button_height,
+            "Load Game", (80, 120, 180), (100, 140, 200)
+        )
+
+        # Saved games list
+        self.saves: List[Dict[str, str]] = []
+        self.save_buttons: List[Button] = []
+        self.delete_buttons: List[Button] = []
+        self.selected_save_index: Optional[int] = None
+        self.show_load_panel = False
+        self.show_delete_confirm = False
+        self.pending_delete_save_id: Optional[int] = None
+        self.save_area_rect = pygame.Rect(150, 590, SCREEN_WIDTH - 300, 320)
+        self._refresh_save_list()
+        self.last_save_refresh = 0.0
+        self._create_load_panel_buttons()
+        self._create_confirm_dialog_buttons()
         
         # Instructions
         self.instructions = [
@@ -176,19 +199,167 @@ class Menu:
                         self.selected_color_idx = i
                         break
 
-        if self.start_button.handle_event(event):
-            username = self.username_input.get_text().strip()
-            if username:
-                self.on_start_game(username, self.shirt_colors[self.selected_color_idx])
+        if self.show_load_panel:
+            self._handle_load_panel_event(event)
+        
+        if self.show_delete_confirm:
+            self._handle_confirm_dialog_event(event)
+        elif not self.show_load_panel:
+            if self.start_button.handle_event(event):
+                username = self.username_input.get_text().strip()
+                if username:
+                    self.on_start_game(username, self.shirt_colors[self.selected_color_idx], None)
+
+            if self.load_button.handle_event(event):
+                self._refresh_save_list()
+                self.show_load_panel = True
+                self.selected_save_index = None
+
+    def _handle_load_panel_event(self, event: pygame.event.Event):
+        """Handle events within the load panel overlay."""
+        if event.type == pygame.MOUSEMOTION:
+            # Update hover states for buttons
+            if hasattr(self, 'close_button'):
+                self.close_button.is_hovered = self.close_button.rect.collidepoint(event.pos)
+            if hasattr(self, 'load_confirm_button'):
+                self.load_confirm_button.is_hovered = self.load_confirm_button.rect.collidepoint(event.pos)
+        
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # Create buttons if not exists
+            if not hasattr(self, 'close_button'):
+                self._create_load_panel_buttons()
+            
+            # Check close button
+            if self.close_button.rect.collidepoint(event.pos):
+                self.show_load_panel = False
+                return
+            
+            # Check load confirm button
+            if self.load_confirm_button.rect.collidepoint(event.pos):
+                if self.selected_save_index is not None:
+                    save = self.saves[self.selected_save_index]
+                    username = save.get("name") or self.username_input.get_text().strip()
+                    shirt_color = save.get("shirt_color", self.shirt_colors[self.selected_color_idx])
+                    if username:
+                        self.on_start_game(username, tuple(shirt_color), save.get("id"))
+                return
+            
+            # Check save item clicks
+            panel_width = 700
+            panel_height = 450
+            panel_x = (SCREEN_WIDTH - panel_width) // 2
+            panel_y = (SCREEN_HEIGHT - panel_height) // 2
+            list_x = panel_x + 20
+            list_y = panel_y + 60
+            list_width = panel_width - 40
+            item_height = 50
+            
+            for index, save in enumerate(self.saves):
+                item_y = list_y + index * item_height
+                if item_y + item_height > panel_y + panel_height - 80:
+                    break
+                
+                # Item rect for selection
+                item_rect = pygame.Rect(list_x, item_y, list_width - 100, item_height - 8)
+                
+                # Delete button rect
+                delete_rect = pygame.Rect(list_x + list_width - 90, item_y, 80, item_height - 8)
+                
+                if delete_rect.collidepoint(event.pos):
+                    save_id = self.saves[index]["id"]
+                    self.pending_delete_save_id = save_id
+                    self.show_delete_confirm = True
+                    return
+                
+                if item_rect.collidepoint(event.pos):
+                    self.selected_save_index = index
+                    return
+    
+    def _handle_confirm_dialog_event(self, event: pygame.event.Event):
+        """Handle events within the confirmation dialog."""
+        if event.type == pygame.MOUSEMOTION:
+            if hasattr(self, 'yes_button'):
+                self.yes_button.is_hovered = self.yes_button.rect.collidepoint(event.pos)
+            if hasattr(self, 'no_button'):
+                self.no_button.is_hovered = self.no_button.rect.collidepoint(event.pos)
+        
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if hasattr(self, 'yes_button') and self.yes_button.rect.collidepoint(event.pos):
+                if self.pending_delete_save_id is not None:
+                    self._delete_save(self.pending_delete_save_id)
+                    self.pending_delete_save_id = None
+                self.show_delete_confirm = False
+                return
+            
+            if hasattr(self, 'no_button') and self.no_button.rect.collidepoint(event.pos):
+                self.pending_delete_save_id = None
+                self.show_delete_confirm = False
+                return
     
     def update(self, dt: float):
         """Update menu state"""
         self.username_input.update(dt)
+        self.last_save_refresh += dt
+        if self.last_save_refresh >= 1.0:
+            self._refresh_save_list()
+            self.last_save_refresh = 0.0
+
+    def _create_load_panel_buttons(self):
+        """Create buttons for the load panel overlay."""
+        panel_width = 700
+        panel_height = 450
+        panel_x = (SCREEN_WIDTH - panel_width) // 2
+        panel_y = (SCREEN_HEIGHT - panel_height) // 2
+        
+        self.close_button = Button(
+            panel_x + panel_width - 110,
+            panel_y + 15,
+            90,
+            36,
+            "Close",
+            (120, 120, 120),
+            (150, 150, 150)
+        )
+        self.load_confirm_button = Button(
+            panel_x + panel_width // 2 - 80,
+            panel_y + panel_height - 60,
+            160,
+            40,
+            "Load Selected",
+            GREEN,
+            DARK_GREEN
+        )
+    
+    def _create_confirm_dialog_buttons(self):
+        """Create buttons for the confirmation dialog."""
+        dialog_width = 400
+        dialog_height = 180
+        dialog_x = (SCREEN_WIDTH - dialog_width) // 2
+        dialog_y = (SCREEN_HEIGHT - dialog_height) // 2
+        
+        self.yes_button = Button(
+            dialog_x + dialog_width // 2 - 130,
+            dialog_y + dialog_height - 60,
+            100,
+            40,
+            "Yes",
+            (180, 70, 70),
+            (200, 90, 90)
+        )
+        self.no_button = Button(
+            dialog_x + dialog_width // 2 + 30,
+            dialog_y + dialog_height - 60,
+            100,
+            40,
+            "No",
+            (100, 100, 100),
+            (130, 130, 130)
+        )
     
     def draw(self, screen: pygame.Surface):
         """Draw the menu"""
         # Draw background
-        screen.fill(SKY_BLUE := (135, 206, 235))
+        screen.fill(SKY_BLUE)
         self._draw_farm_background(screen)
         
         # Draw title with shadow
@@ -214,7 +385,7 @@ class Menu:
         
         # Draw color selection label
         color_label = label_font.render("Select Shirt Color:", True, BLACK)
-        color_label_rect = color_label.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 10))
+        color_label_rect = color_label.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30))
         screen.blit(color_label, color_label_rect)
 
         # Draw swatches
@@ -225,17 +396,234 @@ class Menu:
             else:
                 pygame.draw.rect(screen, BLACK, rect, 1, border_radius=5)
 
-        # Draw input and button
+        # Draw input and buttons
         self.username_input.draw(screen, self.input_font)
         self.start_button.draw(screen, self.button_font)
+        self.load_button.draw(screen, self.button_font)
         
         # Draw instructions
         instruction_font = pygame.font.SysFont(FONT_NAME, 20)
-        y_start = SCREEN_HEIGHT - 180
+        y_start = SCREEN_HEIGHT - 100
         for i, instruction in enumerate(self.instructions):
             inst_surface = instruction_font.render(instruction, True, BLACK)
             inst_rect = inst_surface.get_rect(center=(SCREEN_WIDTH // 2, y_start + i * 25))
             screen.blit(inst_surface, inst_rect)
+        
+        # Draw load panel overlay if active
+        if self.show_load_panel:
+            self._draw_load_panel(screen)
+        
+        # Draw confirmation dialog if active
+        if self.show_delete_confirm:
+            self._draw_confirm_dialog(screen)
+
+    def _draw_load_panel(self, screen: pygame.Surface):
+        """Draw the load game panel overlay."""
+        panel_width = 700
+        panel_height = 450
+        panel_x = (SCREEN_WIDTH - panel_width) // 2
+        panel_y = (SCREEN_HEIGHT - panel_height) // 2
+        
+        # Semi-transparent background
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        screen.blit(overlay, (0, 0))
+        
+        # Panel background
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+        pygame.draw.rect(screen, (50, 50, 60), panel_rect, border_radius=15)
+        pygame.draw.rect(screen, WHITE, panel_rect, 3, border_radius=15)
+        
+        # Title
+        title_font = pygame.font.SysFont(FONT_NAME, 32, bold=True)
+        title = title_font.render("Load Game", True, WHITE)
+        screen.blit(title, (panel_x + 20, panel_y + 15))
+        
+        # Draw close and load buttons
+        self.close_button.draw(screen, self.button_font)
+        self.load_confirm_button.draw(screen, self.button_font)
+        
+        # Save list area
+        list_x = panel_x + 20
+        list_y = panel_y + 60
+        list_width = panel_width - 40
+        item_height = 50
+        
+        if self.saves:
+            for index, save in enumerate(self.saves):
+                item_y = list_y + index * item_height
+                if item_y + item_height > panel_y + panel_height - 80:
+                    break
+                
+                # Item background
+                item_rect = pygame.Rect(list_x, item_y, list_width - 100, item_height - 8)
+                if index == self.selected_save_index:
+                    pygame.draw.rect(screen, (80, 120, 160), item_rect, border_radius=8)
+                    pygame.draw.rect(screen, (255, 215, 0), item_rect, 3, border_radius=8)
+                else:
+                    pygame.draw.rect(screen, (70, 70, 80), item_rect, border_radius=8)
+                
+                # Save info
+                name_text = self.save_list_font.render(f"{save['name']} (Save {save['id']})", True, WHITE)
+                screen.blit(name_text, (list_x + 10, item_y + 5))
+                
+                date_text = pygame.font.SysFont(FONT_NAME, 18).render(
+                    f"Last played: {save['updated_at'].split('T')[0]}", True, LIGHT_GRAY
+                )
+                screen.blit(date_text, (list_x + 10, item_y + 28))
+                
+                # Delete button
+                delete_rect = pygame.Rect(list_x + list_width - 90, item_y, 80, item_height - 8)
+                delete_color = (200, 80, 80) if delete_rect.collidepoint(pygame.mouse.get_pos()) else (160, 60, 60)
+                pygame.draw.rect(screen, delete_color, delete_rect, border_radius=5)
+                delete_text = pygame.font.SysFont(FONT_NAME, 20).render("Delete", True, WHITE)
+                delete_text_rect = delete_text.get_rect(center=delete_rect.center)
+                screen.blit(delete_text, delete_text_rect)
+        else:
+            empty_text = self.save_list_font.render("No saved games found", True, LIGHT_GRAY)
+            screen.blit(empty_text, (panel_x + 20, list_y + 20))
+
+    def _draw_confirm_dialog(self, screen: pygame.Surface):
+        """Draw the confirmation dialog for delete."""
+        dialog_width = 400
+        dialog_height = 180
+        dialog_x = (SCREEN_WIDTH - dialog_width) // 2
+        dialog_y = (SCREEN_HEIGHT - dialog_height) // 2
+        
+        # Semi-transparent background overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+        
+        # Dialog background
+        dialog_rect = pygame.Rect(dialog_x, dialog_y, dialog_width, dialog_height)
+        pygame.draw.rect(screen, (60, 60, 70), dialog_rect, border_radius=15)
+        pygame.draw.rect(screen, WHITE, dialog_rect, 3, border_radius=15)
+        
+        # Warning icon (triangle with exclamation)
+        icon_x = dialog_x + dialog_width // 2
+        icon_y = dialog_y + 40
+        pygame.draw.polygon(screen, (255, 200, 50), [
+            (icon_x, icon_y - 20),
+            (icon_x - 20, icon_y + 15),
+            (icon_x + 20, icon_y + 15)
+        ])
+        pygame.draw.polygon(screen, (200, 150, 30), [
+            (icon_x, icon_y - 20),
+            (icon_x - 20, icon_y + 15),
+            (icon_x + 20, icon_y + 15)
+        ], 2)
+        # Exclamation mark
+        pygame.draw.line(screen, (60, 60, 70), (icon_x, icon_y - 5), (icon_x, icon_y + 5), 3)
+        pygame.draw.circle(screen, (60, 60, 70), (icon_x, icon_y + 10), 2)
+        
+        # Message text
+        message_font = pygame.font.SysFont(FONT_NAME, 24, bold=True)
+        message = message_font.render("Are you sure?", True, WHITE)
+        message_rect = message.get_rect(center=(dialog_x + dialog_width // 2, dialog_y + 80))
+        screen.blit(message, message_rect)
+        
+        sub_message_font = pygame.font.SysFont(FONT_NAME, 18)
+        sub_message = sub_message_font.render("This action cannot be undone.", True, LIGHT_GRAY)
+        sub_message_rect = sub_message.get_rect(center=(dialog_x + dialog_width // 2, dialog_y + 105))
+        screen.blit(sub_message, sub_message_rect)
+        
+        # Draw buttons
+        if hasattr(self, 'yes_button'):
+            self.yes_button.draw(screen, self.button_font)
+        if hasattr(self, 'no_button'):
+            self.no_button.draw(screen, self.button_font)
+
+    def _get_save_db_path(self) -> str:
+        """Get the sqlite path for saves."""
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base_dir, "saves.db")
+
+    def _refresh_save_list(self):
+        """Load saved games from sqlite and build buttons."""
+        db_path = self._get_save_db_path()
+        if not os.path.exists(db_path):
+            self.saves = []
+            self.save_buttons = []
+            self.delete_buttons = []
+            return
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS saves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    data TEXT NOT NULL
+                )
+                """
+            )
+            rows = conn.execute(
+                "SELECT id, name, created_at, updated_at, data FROM saves ORDER BY updated_at DESC"
+            ).fetchall()
+        self.saves = []
+        self.save_buttons = []
+        self.delete_buttons = []
+        button_width = self.save_area_rect.width - 140
+        button_height = 36
+        start_x = self.save_area_rect.x + 20
+        start_y = self.save_area_rect.y + 50
+        delete_width = 80
+        for index, row in enumerate(rows[:6]):
+            save_id, name, created_at, updated_at, data = row
+            payload = json.loads(data)
+            shirt_color = payload.get("entities", {}).get("farmer", {}).get("shirt_color", self.shirt_colors[0])
+            self.saves.append({
+                "id": save_id,
+                "name": name,
+                "created_at": created_at,
+                "updated_at": updated_at,
+                "shirt_color": shirt_color
+            })
+            button = Button(
+                start_x,
+                start_y + index * 48,
+                button_width,
+                button_height,
+                f"{name} (Save {save_id})",
+                (70, 130, 180),
+                (90, 150, 200)
+            )
+            delete_button = Button(
+                start_x + button_width + 20,
+                start_y + index * 48,
+                delete_width,
+                button_height,
+                "Delete",
+                (180, 70, 70),
+                (200, 90, 90)
+            )
+            self.save_buttons.append(button)
+            self.delete_buttons.append(delete_button)
+        if self.selected_save_index is not None and self.selected_save_index >= len(self.saves):
+            self.selected_save_index = None
+
+    def _delete_save(self, save_id: int):
+        """Delete a save by id."""
+        db_path = self._get_save_db_path()
+        if not os.path.exists(db_path):
+            return
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS saves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    data TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute("DELETE FROM saves WHERE id = ?", (save_id,))
+            conn.commit()
+        self._refresh_save_list()
 
     def _draw_farm_background(self, screen: pygame.Surface):
         """Draw a scenic farm background with animals and trees."""

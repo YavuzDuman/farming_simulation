@@ -42,11 +42,11 @@ CHEST_WOOD = (160, 82, 45)
 CHEST_GOLD = (255, 215, 0)
 
 # Grid settings - SMALLER GRID BOXES
-GRID_SIZE = 48  # Reduced from 64 to 48 pixels
-GRID_COLS = 24  # More columns for bigger screen
-GRID_ROWS = 16  # More rows for bigger screen
-GRID_OFFSET_X = (SCREEN_WIDTH - GRID_COLS * GRID_SIZE) // 2
-GRID_OFFSET_Y = 100  # Leave space for UI at top
+GRID_SIZE = 50  # Grid cell size
+GRID_COLS = 32  # 32 columns = 1600 pixels (full screen width)
+GRID_ROWS = 18  # 18 rows = 900 pixels (leaves room for UI)
+GRID_OFFSET_X = 0  # Start from left edge
+GRID_OFFSET_Y = 90  # Leave space for UI at top
 
 # Player settings - Adjusted for smaller grid
 PLAYER_SPEED = 4

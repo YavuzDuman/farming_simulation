@@ -5,6 +5,7 @@ Entry point for the game
 import pygame
 import sys
 import os
+from typing import Optional
 
 # Add the current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,11 +34,11 @@ def main():
     game_manager = None
     menu = None
     
-    def start_game(player_name: str, shirt_color: tuple):
+    def start_game(player_name: str, shirt_color: tuple, save_id: Optional[int] = None):
         """Callback to start the game with the given username and shirt color"""
         nonlocal current_state, username, game_manager
         username = player_name
-        game_manager = GameManager(screen, username, shirt_color)
+        game_manager = GameManager(screen, username, shirt_color, save_id)
         current_state = "playing"
     
     # Create menu with callback
@@ -66,10 +67,15 @@ def main():
         elif current_state == "playing":
             # Run the game
             if game_manager:
-                if not game_manager.handle_events():
+                result = game_manager.handle_events()
+                if result == "quit":
                     running = False
-                game_manager.update(dt)
-                game_manager.draw()
+                elif result == "menu":
+                    current_state = "menu"
+                    game_manager = None
+                else:
+                    game_manager.update(dt)
+                    game_manager.draw()
             else:
                 running = False
     

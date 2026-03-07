@@ -439,6 +439,16 @@ class Inventory:
         
         # Click callback
         self.on_slot_click: Optional[Callable[[int], None]] = None
+
+    def _create_tool_from_type(self, tool_type: ToolType) -> Tool:
+        """Create a tool instance based on tool type."""
+        tool_names = {
+            ToolType.SWORD: "Sword",
+            ToolType.HOE: "Hoe",
+            ToolType.AXE: "Axe",
+            ToolType.HAMMER: "Hammer"
+        }
+        return Tool(tool_type, tool_names.get(tool_type, "Tool"))
     
     def get_selected_tool(self) -> Optional[Tool]:
         """Get the currently selected tool"""
