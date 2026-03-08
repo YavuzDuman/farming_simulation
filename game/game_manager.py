@@ -22,6 +22,7 @@ from entities.tree import Tree
 from entities.house import House
 from entities.chest import Chest
 from entities.stone import Stone
+from entities.shop import Shop
 from ui.game_ui import GameUI
 from game.inventory import Inventory, ToolType, ItemType, Item
 
@@ -68,11 +69,12 @@ class GameManager:
         # Store inventory rect for click detection
         self.inventory_rect = None
         
-        # Create farm objects (trees, house, chest, stones)
+        # Create farm objects (trees, house, chest, stones, shop)
         self.trees: List[Tree] = []
         self.stones: List[Stone] = []
         self.house: Optional[House] = None
         self.chest: Optional[Chest] = None
+        self.shop: Optional[Shop] = None
         
         # Regeneration tracking
         self.tree_regeneration_timer = 0.0
@@ -94,7 +96,7 @@ class GameManager:
             self.load_game(self.save_id)
     
     def _create_farm_objects(self):
-        """Create trees, house, chest, and stones on the farm"""
+        """Create trees, house, chest, stones, and shop on the farm"""
         # Create house using grid coordinates (col, row)
         # House is 4 cells wide, so place it at column 1, row 1
         self.house = House(1, 1, GRID_OFFSET_X, GRID_OFFSET_Y)
@@ -103,7 +105,12 @@ class GameManager:
         # Place it at column 5, row 2 (next to house)
         self.chest = Chest(5, 2, GRID_OFFSET_X, GRID_OFFSET_Y)
         
-        # Get occupied cells (house and chest area)
+        # Create shop on the top right of the grid
+        # Shop is 4 cells wide, 3 cells tall
+        # Place it at column GRID_COLS - 4, row 0 (top right area)
+        self.shop = Shop(GRID_COLS - 4, 0, GRID_OFFSET_X, GRID_OFFSET_Y)
+        
+        # Get occupied cells (house, chest, and shop area)
         occupied_cells = self._get_occupied_cells()
         
         # Create trees scattered around the farm
@@ -117,12 +124,16 @@ class GameManager:
         self.last_stone_count = self._count_alive_stones()
     
     def _get_occupied_cells(self) -> set:
-        """Get cells that are occupied by house, chest, or other objects"""
+        """Get cells that are occupied by house, chest, shop, or other objects"""
         occupied = set()
         # Mark house and chest areas as occupied
         for hc in range(0, 6):
             for hr in range(0, 4):
                 occupied.add((hc, hr))
+        # Mark shop area as occupied (4 cells wide, 3 cells tall)
+        for sc in range(GRID_COLS - 4, GRID_COLS):
+            for sr in range(0, 3):
+                occupied.add((sc, sr))
         return occupied
     
     def _count_alive_trees(self) -> int:
@@ -214,6 +225,8 @@ class GameManager:
             obstacles.append(self.house)
         if self.chest:
             obstacles.append(self.chest)
+        if self.shop:
+            obstacles.append(self.shop)
         obstacles.extend(self.trees)
         obstacles.extend([s for s in self.stones if s.is_alive])
         return obstacles
@@ -348,6 +361,11 @@ class GameManager:
                 "direction": self.farmer.direction,
                 "shirt_color": self.farmer.shirt_color
             },
+            "player": {
+                "level": self.player.level,
+                "xp": self.player.xp,
+                "money": self.player.money
+            },
             "trees": [
                 {
                     "x": tree.x,
@@ -396,8 +414,19 @@ class GameManager:
             self.farmer.y = farmer_data.get("y", self.farmer.y)
             self.farmer.direction = farmer_data.get("direction", self.farmer.direction)
             shirt_color = farmer_data.get("shirt_color")
-            if shirt_color:
-                self.farmer.shirt_color = tuple(shirt_color)
+            if shirt_color and isinstance(shirt_color, (list, tuple)) and len(shirt_color) == 3:
+                # Validate each color component is in valid range 0-255
+                valid_color = all(isinstance(c, (int, float)) and 0 <= c <= 255 for c in shirt_color)
+                if valid_color:
+                    self.farmer.shirt_color = tuple(int(c) for c in shirt_color)
+        
+        # Load player level and XP
+        player_data = data.get("player", {})
+        if player_data:
+            self.player.level = player_data.get("level", 1)
+            self.player.xp = player_data.get("xp", 0)
+            self.player.money = player_data.get("money", 100)
+            self.player.xp_to_next_level = self.player._calculate_xp_for_level(self.player.level)
 
         self.trees = []
         for tree_data in data.get("trees", []):
@@ -525,6 +554,11 @@ class GameManager:
             if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.is_tilled and cell.plant_state == 0:  # EMPTY = 0
                 plant_type = PlantType.CARROT if selected.item_type == ItemType.CARROT_SEED else PlantType.WHEAT
                 if cell.plant_seed(plant_type):
+                    # Award XP for planting seed
+                    xp_gained = self.player.get_xp_for_activity('plant_seed')
+                    self.player.add_xp(xp_gained)
+                    # Show XP message
+                    self.ui.add_xp_message('plant_seed', xp_gained)
                     # Consume one seed
                     selected.quantity -= 1
                     if selected.quantity <= 0:
@@ -568,8 +602,12 @@ class GameManager:
                             # Chop the tree
                             tree_fell = tree.chop()
                             if tree_fell:
-                                # Tree fell - wood is now available for pickup
-                                pass
+                                # Award XP based on tree size
+                                xp_activity = f"tree_{tree.size}"
+                                xp_gained = self.player.get_xp_for_activity(xp_activity)
+                                self.player.add_xp(xp_gained)
+                                # Show XP message
+                                self.ui.add_xp_message(xp_activity, xp_gained)
                         break
         
         # Handle hammer smashing stones
@@ -589,8 +627,12 @@ class GameManager:
                             # Smash the stone
                             stone_broke = stone.smash()
                             if stone_broke:
-                                # Stone broke - stones are now available for pickup
-                                pass
+                                # Award XP based on stone size
+                                xp_activity = f"stone_{stone.size}"
+                                xp_gained = self.player.get_xp_for_activity(xp_activity)
+                                self.player.add_xp(xp_gained)
+                                # Show XP message
+                                self.ui.add_xp_message(xp_activity, xp_gained)
                         break
     
     def _check_wood_collection(self, mouse_pos: tuple[int, int]):
@@ -784,6 +826,17 @@ class GameManager:
         # Update UI with selected cell info
         self.ui.update(self.grid.selected_cell)
         
+        # Update XP display in UI
+        self.ui.update_xp_display(
+            self.player.level,
+            self.player.xp,
+            self.player.xp_to_next_level,
+            self.player.get_xp_progress_percentage()
+        )
+        
+        # Update money display in UI
+        self.ui.update_money_display(self.player.money)
+        
         # Update inventory animations
         self.inventory.update()
         
@@ -871,6 +924,10 @@ class GameManager:
         # Add chest
         if self.chest:
             render_list.append(('chest', self.chest.sort_y, self.chest))
+        
+        # Add shop
+        if self.shop:
+            render_list.append(('shop', self.shop.sort_y, self.shop))
         
         # Sort by Y position (objects with lower Y drawn first)
         render_list.sort(key=lambda x: x[1])

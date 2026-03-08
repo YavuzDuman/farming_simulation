@@ -4,13 +4,59 @@ In-Game UI Components
 import pygame
 import sys
 import os
-from typing import Optional
+import time
+from typing import Optional, List, Tuple
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     SCREEN_WIDTH, WHITE, BLACK, GREEN, DARK_GREEN, YELLOW, 
-    GAME_UI_SIZE, FONT_NAME, GRID_OFFSET_Y
+    GAME_UI_SIZE, FONT_NAME, GRID_OFFSET_Y, GRID_OFFSET_X, GRID_COLS, GRID_SIZE
 )
 from ui.menu import Button
+
+
+class XPMessage:
+    """A single XP notification message"""
+    
+    def __init__(self, activity: str, xp_amount: int, x: int, y: int):
+        self.activity = activity
+        self.xp_amount = xp_amount
+        self.x = x
+        self.y = y
+        self.created_time = time.time()
+        self.duration = 5.0  # 5 seconds display time
+        self.alpha = 255
+        
+        # Format activity name for display - SHORTER text to fit
+        self.display_text = self._format_activity(activity, xp_amount)
+    
+    def _format_activity(self, activity: str, xp: int) -> str:
+        """Format the activity name for display - shorter text"""
+        if activity.startswith('tree_'):
+            size = activity.split('_')[1]
+            return f"+{xp} XP - {size} tree"
+        elif activity.startswith('stone_'):
+            size = activity.split('_')[1]
+            return f"+{xp} XP - {size} stone"
+        elif activity == 'plant_seed':
+            return f"+{xp} XP - planted"
+        elif activity == 'harvest_plant':
+            return f"+{xp} XP - harvested"
+        else:
+            return f"+{xp} XP"
+    
+    def is_expired(self) -> bool:
+        """Check if the message has expired"""
+        return time.time() - self.created_time >= self.duration
+    
+    def get_alpha(self) -> int:
+        """Get current alpha value for fade effect"""
+        elapsed = time.time() - self.created_time
+        if elapsed > self.duration - 1.0:  # Start fading in last second
+            fade_progress = (elapsed - (self.duration - 1.0)) / 1.0
+            # Clamp fade_progress to valid range [0, 1]
+            fade_progress = max(0.0, min(1.0, fade_progress))
+            return int(255 * (1.0 - fade_progress))
+        return 255
 
 
 class GameUI:
@@ -21,9 +67,36 @@ class GameUI:
         self.font = pygame.font.SysFont(FONT_NAME, GAME_UI_SIZE, bold=True)
         self.title_font = pygame.font.SysFont(FONT_NAME, 32, bold=True)
         self.button_font = pygame.font.SysFont(FONT_NAME, 20, bold=True)
+        self.small_font = pygame.font.SysFont(FONT_NAME, 16, bold=True)
+        self.message_font = pygame.font.SysFont(FONT_NAME, 18, bold=True)
+        self.money_font = pygame.font.SysFont(FONT_NAME, 22, bold=True)
         
         # UI State
         self.selected_cell_text = None
+        
+        # XP Bar settings
+        self.xp_bar_width = 200
+        self.xp_bar_height = 20
+        self.xp_bar_x = 20
+        self.xp_bar_y = 70
+        
+        # XP display values (updated by game manager)
+        self.player_level = 1
+        self.player_xp = 0
+        self.xp_to_next = 100
+        self.xp_percentage = 0
+        
+        # Money display (updated by game manager)
+        self.player_money = 100
+        
+        # XP Message box settings (top right of visible area, below top bar)
+        self.xp_messages: List[XPMessage] = []
+        self.message_box_x = SCREEN_WIDTH - 240  # Position from right edge
+        self.message_box_y = GRID_OFFSET_Y + 10  # Below top bar
+        self.message_box_width = 230  # Wider to fit text
+        self.message_box_height = 80
+        self.message_spacing = 28
+        
         self.save_button = Button(
             SCREEN_WIDTH - 260,
             15,
@@ -43,9 +116,34 @@ class GameUI:
             (150, 150, 150)
         )
     
+    def add_xp_message(self, activity: str, xp_amount: int):
+        """Add a new XP notification message"""
+        # Calculate position (stack from top)
+        y_offset = len(self.xp_messages) * self.message_spacing
+        msg = XPMessage(activity, xp_amount, self.message_box_x, self.message_box_y + y_offset)
+        self.xp_messages.append(msg)
+    
     def update(self, selected_cell: tuple = None):
         """Update UI state"""
         self.selected_cell_text = selected_cell
+        
+        # Remove expired messages
+        self.xp_messages = [msg for msg in self.xp_messages if not msg.is_expired()]
+        
+        # Update message positions
+        for i, msg in enumerate(self.xp_messages):
+            msg.y = self.message_box_y + i * self.message_spacing
+    
+    def update_xp_display(self, level: int, xp: int, xp_to_next: int, percentage: float):
+        """Update the XP display values"""
+        self.player_level = level
+        self.player_xp = xp
+        self.xp_to_next = xp_to_next
+        self.xp_percentage = percentage
+    
+    def update_money_display(self, money: int):
+        """Update the money display value"""
+        self.player_money = money
     
     def handle_event(self, event: pygame.event.Event) -> Optional[str]:
         """Handle UI events and return action name when clicked."""
@@ -54,6 +152,71 @@ class GameUI:
         if self.menu_button.handle_event(event):
             return "menu"
         return None
+    
+    def _draw_xp_bar(self, screen: pygame.Surface):
+        """Draw the XP/Level bar in the top left"""
+        # Draw level badge
+        level_text = f"Lv.{self.player_level}"
+        level_surface = self.font.render(level_text, True, YELLOW)
+        level_rect = level_surface.get_rect(topleft=(self.xp_bar_x, self.xp_bar_y - 5))
+        screen.blit(level_surface, level_rect)
+        
+        # Calculate bar position (to the right of level badge)
+        bar_x = self.xp_bar_x + 60
+        bar_y = self.xp_bar_y
+        
+        # Draw bar background (dark)
+        bar_bg_rect = pygame.Rect(bar_x, bar_y, self.xp_bar_width, self.xp_bar_height)
+        pygame.draw.rect(screen, (40, 30, 20), bar_bg_rect, border_radius=5)
+        pygame.draw.rect(screen, (80, 60, 40), bar_bg_rect, 2, border_radius=5)
+        
+        # Draw XP fill
+        # Clamp percentage to valid range [0, 100]
+        clamped_percentage = max(0.0, min(100.0, self.xp_percentage))
+        fill_width = int((clamped_percentage / 100) * self.xp_bar_width)
+        if fill_width > 0:
+            fill_rect = pygame.Rect(bar_x, bar_y, fill_width, self.xp_bar_height)
+            # Gradient color from green to yellow based on progress
+            progress = clamped_percentage / 100
+            r = int(50 + 205 * progress)  # 50 -> 255
+            g = int(200 - 50 * progress)  # 200 -> 150
+            b = int(50)
+            pygame.draw.rect(screen, (r, g, b), fill_rect, border_radius=5)
+        
+        # Draw XP text (centered in bar)
+        xp_text = f"{self.player_xp}/{self.xp_to_next} XP"
+        xp_surface = self.small_font.render(xp_text, True, WHITE)
+        xp_rect = xp_surface.get_rect(center=(bar_x + self.xp_bar_width // 2, bar_y + self.xp_bar_height // 2))
+        screen.blit(xp_surface, xp_rect)
+    
+    def _draw_xp_messages(self, screen: pygame.Surface):
+        """Draw XP notification messages in top right of grid"""
+        for msg in self.xp_messages:
+            alpha = msg.get_alpha()
+            
+            # Create a surface with per-pixel alpha for transparency
+            msg_surface = pygame.Surface((self.message_box_width, 24), pygame.SRCALPHA)
+            
+            # Background with transparency - darker for better contrast
+            bg_color = (20, 40, 20, int(alpha * 0.95))  # Darker green background
+            border_color = (120, 220, 120, alpha)  # Brighter green border
+            
+            # Draw background
+            pygame.draw.rect(msg_surface, bg_color, (0, 0, self.message_box_width, 24), border_radius=4)
+            pygame.draw.rect(msg_surface, border_color, (0, 0, self.message_box_width, 24), 2, border_radius=4)
+            
+            # Render text with BOLD WHITE for maximum readability
+            text_surface = self.message_font.render(msg.display_text, True, (255, 255, 255))
+            # Create alpha version of text
+            text_alpha = pygame.Surface(text_surface.get_size(), pygame.SRCALPHA)
+            text_alpha.fill((255, 255, 255, alpha))
+            text_surface.blit(text_alpha, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            
+            # Blit text onto message surface with proper padding
+            msg_surface.blit(text_surface, (8, 3))
+            
+            # Blit message surface onto screen
+            screen.blit(msg_surface, (msg.x, msg.y))
     
     def draw(self, screen: pygame.Surface):
         """Draw the game UI"""
@@ -68,36 +231,45 @@ class GameUI:
         username_rect = username_surface.get_rect(topleft=(20, 20))
         screen.blit(username_surface, username_rect)
         
-        # Draw welcome message
-        welcome_text = "Welcome to your farm!"
-        welcome_surface = self.font.render(welcome_text, True, WHITE)
-        welcome_rect = welcome_surface.get_rect(topleft=(20, 50))
-        screen.blit(welcome_surface, welcome_rect)
+        # Draw XP/Level bar
+        self._draw_xp_bar(screen)
         
-        # Draw selected cell info (top-right)
+        # Draw money display (center of navbar, below title)
+        self._draw_money_display(screen)
+        
+        # Draw selected cell info (top-right, moved down to avoid overlap)
         if self.selected_cell_text:
             col, row = self.selected_cell_text
-            cell_text = f"Selected: Grid ({col}, {row})"
+            cell_text = f"Grid ({col}, {row})"
             cell_surface = self.font.render(cell_text, True, WHITE)
-            cell_rect = cell_surface.get_rect(topright=(SCREEN_WIDTH - 20, 20))
+            cell_rect = cell_surface.get_rect(topright=(SCREEN_WIDTH - 20, 55))
             screen.blit(cell_surface, cell_rect)
-        
-        # Draw controls hint
-        controls_text = "WASD: Move | Click: Select | ESC: Quit"
-        controls_surface = self.font.render(controls_text, True, (200, 200, 200))
-        controls_rect = controls_surface.get_rect(topright=(SCREEN_WIDTH - 170, 50))
-        screen.blit(controls_surface, controls_rect)
         
         # Draw game title (centered)
         title_surface = self.title_font.render("Farm Life", True, YELLOW)
-        title_rect = title_surface.get_rect(center=(SCREEN_WIDTH // 2, 40))
+        title_rect = title_surface.get_rect(center=(SCREEN_WIDTH // 2, 25))
         screen.blit(title_surface, title_rect)
         
         # Draw save button
         self.save_button.draw(screen, self.button_font)
         self.menu_button.draw(screen, self.button_font)
         
-        # Draw decorative line under title
-        pygame.draw.line(screen, YELLOW, 
-                        (SCREEN_WIDTH // 2 - 80, 60), 
-                        (SCREEN_WIDTH // 2 + 80, 60), 2)
+        # Draw XP notification messages
+        self._draw_xp_messages(screen)
+    
+    def _draw_money_display(self, screen: pygame.Surface):
+        """Draw the money display in the center of the navbar"""
+        # Position below the title
+        money_x = SCREEN_WIDTH // 2
+        money_y = 55
+        
+        # Draw coin icon (gold circle)
+        coin_radius = 10
+        pygame.draw.circle(screen, (255, 215, 0), (money_x - 50, money_y), coin_radius)  # Gold fill
+        pygame.draw.circle(screen, (218, 165, 32), (money_x - 50, money_y), coin_radius, 2)  # Gold border
+        
+        # Draw money amount
+        money_text = f"{self.player_money}"
+        money_surface = self.money_font.render(money_text, True, YELLOW)
+        money_rect = money_surface.get_rect(midleft=(money_x - 35, money_y))
+        screen.blit(money_surface, money_rect)

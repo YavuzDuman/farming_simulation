@@ -201,41 +201,45 @@ class Menu:
 
         if self.show_load_panel:
             self._handle_load_panel_event(event)
+            return  # Don't process other events when load panel is shown
         
         if self.show_delete_confirm:
             self._handle_confirm_dialog_event(event)
-        elif not self.show_load_panel:
-            if self.start_button.handle_event(event):
-                username = self.username_input.get_text().strip()
-                if username:
-                    self.on_start_game(username, self.shirt_colors[self.selected_color_idx], None)
+            return  # Don't process other events when delete confirm is shown
+        
+        if self.start_button.handle_event(event):
+            username = self.username_input.get_text().strip()
+            if username:
+                self.on_start_game(username, self.shirt_colors[self.selected_color_idx], None)
 
-            if self.load_button.handle_event(event):
-                self._refresh_save_list()
-                self.show_load_panel = True
-                self.selected_save_index = None
+        if self.load_button.handle_event(event):
+            self._refresh_save_list()
+            self.show_load_panel = True
+            self.selected_save_index = None
+            # Create buttons immediately when panel is shown
+            self._create_load_panel_buttons()
 
     def _handle_load_panel_event(self, event: pygame.event.Event):
         """Handle events within the load panel overlay."""
+        # Ensure buttons exist
+        if not hasattr(self, 'close_button') or self.close_button is None:
+            self._create_load_panel_buttons()
+        
         if event.type == pygame.MOUSEMOTION:
             # Update hover states for buttons
-            if hasattr(self, 'close_button'):
+            if hasattr(self, 'close_button') and self.close_button:
                 self.close_button.is_hovered = self.close_button.rect.collidepoint(event.pos)
-            if hasattr(self, 'load_confirm_button'):
+            if hasattr(self, 'load_confirm_button') and self.load_confirm_button:
                 self.load_confirm_button.is_hovered = self.load_confirm_button.rect.collidepoint(event.pos)
         
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            # Create buttons if not exists
-            if not hasattr(self, 'close_button'):
-                self._create_load_panel_buttons()
-            
             # Check close button
-            if self.close_button.rect.collidepoint(event.pos):
+            if self.close_button and self.close_button.rect.collidepoint(event.pos):
                 self.show_load_panel = False
                 return
             
             # Check load confirm button
-            if self.load_confirm_button.rect.collidepoint(event.pos):
+            if self.load_confirm_button and self.load_confirm_button.rect.collidepoint(event.pos):
                 if self.selected_save_index is not None:
                     save = self.saves[self.selected_save_index]
                     username = save.get("name") or self.username_input.get_text().strip()
