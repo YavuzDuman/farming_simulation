@@ -198,14 +198,16 @@ class Menu:
                     if rect.collidepoint(event.pos):
                         self.selected_color_idx = i
                         break
-
-        if self.show_load_panel:
-            self._handle_load_panel_event(event)
-            return  # Don't process other events when load panel is shown
         
+        # Önce silme onay penceresini kontrol et ki,
+        # üstteki dialog, alttaki load panel yerine tıklamaları yakalasın.
         if self.show_delete_confirm:
             self._handle_confirm_dialog_event(event)
-            return  # Don't process other events when delete confirm is shown
+            return  # Onay penceresi açıkken diğer eventleri işleme
+        
+        if self.show_load_panel:
+            self._handle_load_panel_event(event)
+            return  # Load panel açıkken diğer eventleri işleme
         
         if self.start_button.handle_event(event):
             username = self.username_input.get_text().strip()

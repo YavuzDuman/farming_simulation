@@ -22,6 +22,16 @@ class ItemType(Enum):
     WHEAT = "wheat"
     CARROT = "carrot"
     STONE = "stone"
+    # Precious seeds
+    TOMATO_SEED = "tomato_seed"
+    PUMPKIN_SEED = "pumpkin_seed"
+    STRAWBERRY_SEED = "strawberry_seed"
+    GOLDEN_SEED = "golden_seed"
+    # Precious crops
+    TOMATO = "tomato"
+    PUMPKIN = "pumpkin"
+    STRAWBERRY = "strawberry"
+    GOLDEN_WHEAT = "golden_wheat"
 
 
 class Item:
@@ -105,6 +115,105 @@ class Item:
             # Cracks
             pygame.draw.line(surface, (90, 90, 90), (14, 18), (18, 26), 1)
             pygame.draw.line(surface, (90, 90, 90), (24, 16), (26, 24), 1)
+        
+        elif self.item_type == ItemType.TOMATO_SEED:
+            # Draw tomato seed packet
+            pygame.draw.rect(surface, (220, 180, 140), (8, 8, 24, 28), border_radius=2)
+            pygame.draw.rect(surface, (180, 140, 100), (8, 8, 24, 28), 2, border_radius=2)
+            # Packet label (red)
+            pygame.draw.rect(surface, (220, 60, 60), (10, 12, 20, 10))
+            # Seed dots
+            pygame.draw.circle(surface, (180, 140, 100), (16, 28), 2)
+            pygame.draw.circle(surface, (180, 140, 100), (24, 30), 2)
+            pygame.draw.circle(surface, (180, 140, 100), (20, 32), 2)
+        
+        elif self.item_type == ItemType.PUMPKIN_SEED:
+            # Draw pumpkin seed packet
+            pygame.draw.rect(surface, (230, 190, 140), (8, 8, 24, 28), border_radius=2)
+            pygame.draw.rect(surface, (190, 150, 100), (8, 8, 24, 28), 2, border_radius=2)
+            # Packet label (orange)
+            pygame.draw.rect(surface, (240, 140, 40), (10, 12, 20, 10))
+            # Seed dots
+            pygame.draw.circle(surface, (200, 160, 100), (16, 28), 2)
+            pygame.draw.circle(surface, (200, 160, 100), (24, 30), 2)
+            pygame.draw.circle(surface, (200, 160, 100), (20, 32), 2)
+        
+        elif self.item_type == ItemType.STRAWBERRY_SEED:
+            # Draw strawberry seed packet
+            pygame.draw.rect(surface, (240, 200, 160), (8, 8, 24, 28), border_radius=2)
+            pygame.draw.rect(surface, (200, 160, 120), (8, 8, 24, 28), 2, border_radius=2)
+            # Packet label (pink/red)
+            pygame.draw.rect(surface, (255, 100, 120), (10, 12, 20, 10))
+            # Seed dots
+            pygame.draw.circle(surface, (220, 180, 130), (16, 28), 2)
+            pygame.draw.circle(surface, (220, 180, 130), (24, 30), 2)
+            pygame.draw.circle(surface, (220, 180, 130), (20, 32), 2)
+        
+        elif self.item_type == ItemType.GOLDEN_SEED:
+            # Draw golden seed packet (rare/precious)
+            pygame.draw.rect(surface, (255, 230, 150), (8, 8, 24, 28), border_radius=2)
+            pygame.draw.rect(surface, (200, 170, 80), (8, 8, 24, 28), 2, border_radius=2)
+            # Packet label (gold)
+            pygame.draw.rect(surface, (255, 215, 0), (10, 12, 20, 10))
+            # Sparkle effect
+            pygame.draw.line(surface, (255, 255, 200), (14, 16), (18, 20), 1)
+            pygame.draw.line(surface, (255, 255, 200), (22, 16), (18, 20), 1)
+            # Seed dots
+            pygame.draw.circle(surface, (255, 200, 100), (16, 28), 2)
+            pygame.draw.circle(surface, (255, 200, 100), (24, 30), 2)
+            pygame.draw.circle(surface, (255, 200, 100), (20, 32), 2)
+        
+        elif self.item_type == ItemType.TOMATO:
+            # Draw tomato icon
+            pygame.draw.circle(surface, (220, 60, 60), (20, 22), 12)
+            # Highlight
+            pygame.draw.circle(surface, (255, 120, 120), (16, 18), 4)
+            # Stem
+            pygame.draw.rect(surface, (60, 140, 60), (18, 8, 4, 6))
+            # Leaf
+            pygame.draw.ellipse(surface, (60, 160, 60), (12, 6, 10, 6))
+        
+        elif self.item_type == ItemType.PUMPKIN:
+            # Draw pumpkin icon
+            pygame.draw.ellipse(surface, (240, 140, 40), (8, 14, 24, 20))
+            # Ridges
+            pygame.draw.arc(surface, (200, 100, 20), (10, 14, 8, 20), 0, 3.14, 1)
+            pygame.draw.arc(surface, (200, 100, 20), (22, 14, 8, 20), 0, 3.14, 1)
+            # Stem
+            pygame.draw.rect(surface, (60, 100, 40), (18, 8, 4, 8))
+        
+        elif self.item_type == ItemType.STRAWBERRY:
+            # Draw strawberry icon
+            # Body
+            pygame.draw.polygon(surface, (255, 80, 100), [
+                (20, 8), (30, 28), (10, 28)
+            ])
+            # Seeds
+            pygame.draw.circle(surface, (255, 255, 150), (16, 16), 1)
+            pygame.draw.circle(surface, (255, 255, 150), (24, 16), 1)
+            pygame.draw.circle(surface, (255, 255, 150), (20, 20), 1)
+            pygame.draw.circle(surface, (255, 255, 150), (14, 22), 1)
+            pygame.draw.circle(surface, (255, 255, 150), (26, 22), 1)
+            # Leaves
+            pygame.draw.polygon(surface, (60, 180, 60), [
+                (20, 8), (12, 4), (16, 10), (20, 6), (24, 10), (28, 4)
+            ])
+        
+        elif self.item_type == ItemType.GOLDEN_WHEAT:
+            # Draw golden wheat bundle (precious)
+            for i, offset in enumerate([-8, 0, 8]):
+                x = 20 + offset
+                # Stalk
+                pygame.draw.line(surface, (255, 220, 100), (x, 32), (x, 12), 2)
+                # Head
+                pygame.draw.ellipse(surface, (255, 200, 50), (x - 3, 6, 6, 10))
+                # Grains
+                pygame.draw.line(surface, (255, 180, 0), (x - 2, 8), (x + 2, 8), 1)
+                pygame.draw.line(surface, (255, 180, 0), (x - 2, 12), (x + 2, 12), 1)
+            # Tie/band (gold)
+            pygame.draw.rect(surface, (255, 215, 0), (10, 28, 20, 4), border_radius=2)
+            # Sparkle
+            pygame.draw.circle(surface, (255, 255, 200), (14, 14), 2)
             
         return surface
     
@@ -563,8 +672,25 @@ class Inventory:
         """Get current shake angle for tool rendering"""
         return self.shake_angle if self.is_shaking else 0
     
-    def draw(self, screen: pygame.Surface, x: int, y: int):
-        """Draw the inventory bar at the specified position"""
+    def get_slot_at_position(self, mouse_pos: tuple, inventory_rect: pygame.Rect) -> Optional[int]:
+        """Get the slot index at the given mouse position, or None if not hovering."""
+        x, y = mouse_pos
+        
+        if not inventory_rect.collidepoint(x, y):
+            return None
+        
+        slot_total_width = self.slot_size + self.slot_spacing
+        
+        for i in range(len(self.slots)):
+            slot_x = inventory_rect.x + i * slot_total_width
+            slot_rect = pygame.Rect(slot_x, inventory_rect.y, self.slot_size, self.slot_size)
+            if slot_rect.collidepoint(x, y):
+                return i
+        
+        return None
+    
+    def draw(self, screen: pygame.Surface, x: int, y: int, mouse_pos: tuple = None):
+        """Draw the inventory bar at the specified position. If mouse_pos is provided, show tooltip on hover."""
         import math
         
         total_width = len(self.slots) * self.slot_size + (len(self.slots) - 1) * self.slot_spacing
@@ -581,6 +707,10 @@ class Inventory:
         pygame.draw.rect(screen, (80, 80, 80), panel_rect, 2, border_radius=10)
         
         # Draw slots
+        hovered_slot = None
+        if mouse_pos:
+            hovered_slot = self.get_slot_at_position(mouse_pos, panel_rect)
+        
         for i, slot_content in enumerate(self.slots):
             slot_x = x + i * (self.slot_size + self.slot_spacing)
             slot_rect = pygame.Rect(slot_x, y, self.slot_size, self.slot_size)
@@ -594,6 +724,10 @@ class Inventory:
                 # Unselected slot
                 pygame.draw.rect(screen, (60, 60, 70), slot_rect, border_radius=5)
                 pygame.draw.rect(screen, (100, 100, 100), slot_rect, 1, border_radius=5)
+            
+            # Highlight hovered slot
+            if i == hovered_slot and slot_content:
+                pygame.draw.rect(screen, (150, 150, 170), slot_rect, 2, border_radius=5)
             
             # Draw content (tool or item) if present
             if slot_content:
@@ -612,7 +746,71 @@ class Inventory:
             number_text = font.render(str(i), True, (180, 180, 180))
             screen.blit(number_text, (slot_x + 3, y + 2))
         
+        # Draw tooltip for hovered item
+        if hovered_slot is not None and self.slots[hovered_slot]:
+            self._draw_tooltip(screen, mouse_pos, self.slots[hovered_slot])
+        
         return panel_rect
+    
+    def _draw_tooltip(self, screen: pygame.Surface, mouse_pos: tuple, slot_content):
+        """Draw a tooltip for the hovered item"""
+        font = pygame.font.SysFont('Arial', 14)
+        
+        # Get item name and description
+        if isinstance(slot_content, Tool):
+            name = slot_content.name
+            desc = "A tool for farming"
+        elif isinstance(slot_content, Item):
+            name = slot_content.item_type.value.replace('_', ' ').title()
+            # Item descriptions
+            descriptions = {
+                ItemType.WOOD: "Used for crafting",
+                ItemType.SEED: "Plant to grow wheat",
+                ItemType.CARROT_SEED: "Plant to grow carrots",
+                ItemType.TOMATO_SEED: "Plant to grow tomatoes",
+                ItemType.PUMPKIN_SEED: "Plant to grow pumpkins",
+                ItemType.STRAWBERRY_SEED: "Plant to grow strawberries",
+                ItemType.GOLDEN_SEED: "Rare! Plant for golden wheat",
+                ItemType.WHEAT: "Sell or use for crafting",
+                ItemType.CARROT: "A tasty vegetable",
+                ItemType.TOMATO: "A juicy tomato",
+                ItemType.PUMPKIN: "A large pumpkin",
+                ItemType.STRAWBERRY: "A sweet berry",
+                ItemType.GOLDEN_WHEAT: "Precious golden wheat",
+                ItemType.STONE: "Used for crafting",
+            }
+            desc = descriptions.get(slot_content.item_type, "An item")
+            if slot_content.quantity > 1:
+                desc = f"{desc} (x{slot_content.quantity})"
+        else:
+            name = "Unknown"
+            desc = ""
+        
+        # Calculate tooltip dimensions
+        name_surface = font.render(name, True, (255, 255, 255))
+        desc_surface = font.render(desc, True, (200, 200, 200))
+        
+        tooltip_width = max(name_surface.get_width(), desc_surface.get_width()) + 20
+        tooltip_height = 50
+        
+        # Position tooltip near mouse
+        tooltip_x = mouse_pos[0] + 15
+        tooltip_y = mouse_pos[1] - tooltip_height - 5
+        
+        # Keep tooltip on screen
+        if tooltip_x + tooltip_width > screen.get_width():
+            tooltip_x = mouse_pos[0] - tooltip_width - 15
+        if tooltip_y < 0:
+            tooltip_y = mouse_pos[1] + 20
+        
+        # Draw tooltip background
+        tooltip_rect = pygame.Rect(tooltip_x, tooltip_y, tooltip_width, tooltip_height)
+        pygame.draw.rect(screen, (30, 30, 40), tooltip_rect, border_radius=5)
+        pygame.draw.rect(screen, (100, 100, 120), tooltip_rect, 2, border_radius=5)
+        
+        # Draw name and description
+        screen.blit(name_surface, (tooltip_x + 10, tooltip_y + 8))
+        screen.blit(desc_surface, (tooltip_x + 10, tooltip_y + 28))
 
 
 # Need to import math at module level

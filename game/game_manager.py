@@ -25,6 +25,9 @@ from entities.stone import Stone
 from entities.shop import Shop
 from ui.game_ui import GameUI
 from game.inventory import Inventory, ToolType, ItemType, Item
+from ui.shop_ui import ShopUI
+from ui.extended_inventory import ExtendedInventoryUI
+from ui.tasks_ui import TasksUI
 
 
 # Regeneration settings
@@ -68,6 +71,17 @@ class GameManager:
         
         # Store inventory rect for click detection
         self.inventory_rect = None
+        
+        # Initialize shop UI
+        self.shop_ui = ShopUI()
+        self.shop_ui.on_buy = self._on_shop_buy
+        self.shop_ui.on_sell = self._on_shop_sell
+        
+        # Initialize extended inventory UI
+        self.extended_inventory_ui = ExtendedInventoryUI(self.inventory)
+        
+        # Initialize tasks UI
+        self.tasks_ui = TasksUI()
         
         # Create farm objects (trees, house, chest, stones, shop)
         self.trees: List[Tree] = []
@@ -235,6 +249,79 @@ class GameManager:
         """Called when an inventory slot is clicked"""
         # Update farmer's held tool/item
         self.farmer.held_tool = self.inventory.get_selected_tool()
+    
+    def _on_shop_buy(self, shop_item) -> bool:
+        """Handle buying an item from the shop. Returns True if successful."""
+        from ui.shop_ui import ShopItem
+        if not isinstance(shop_item, ShopItem):
+            return False
+        
+        # Check if player has enough money
+        if self.player.money < shop_item.price:
+            return False
+        
+        # Deduct money
+        self.player.spend_money(shop_item.price)
+        
+        # Add item to inventory (try hotbar first, then extended)
+        new_item = Item(shop_item.item_type, 1)
+        success = self.inventory.add_item(new_item)
+        
+        if not success:
+            # Try extended inventory
+            success = self.extended_inventory_ui.add_item(new_item)
+        
+        if not success:
+            # Refund money if both inventories are full
+            self.player.add_money(shop_item.price)
+            self.shop_ui.show_message("Inventory full!", (255, 100, 100))
+            return False
+        
+        # Update farmer's held tool
+        self.farmer.held_tool = self.inventory.get_selected_tool()
+        return True
+    
+    def _on_shop_sell(self, sell_info) -> bool:
+        """Handle selling an item to the shop. Returns True if successful."""
+        if not isinstance(sell_info, tuple) or len(sell_info) != 3:
+            return False
+        
+        slot_idx, item, price = sell_info
+        
+        if not isinstance(item, Item):
+            return False
+        
+        # Remove one item from the stack
+        if item.quantity > 1:
+            item.quantity -= 1
+        else:
+            # Remove the item completely from the slot
+            self.inventory.slots[slot_idx] = None
+        
+        # Add money to player
+        self.player.add_money(price)
+        
+        # Update farmer's held tool
+        self.farmer.held_tool = self.inventory.get_selected_tool()
+        
+        self.shop_ui.show_message(f"Sold for {price} coins!", GREEN)
+        return True
+    
+    def _get_seed_xp(self, seed_type: ItemType) -> int:
+        """Get XP for planting a seed based on its shop price."""
+        seed_prices = {
+            ItemType.SEED: 10,
+            ItemType.CARROT_SEED: 15,
+            ItemType.TOMATO_SEED: 25,
+            ItemType.PUMPKIN_SEED: 35,
+            ItemType.STRAWBERRY_SEED: 50,
+            ItemType.GOLDEN_SEED: 100,
+        }
+        base_price = seed_prices.get(ItemType.SEED, 10)
+        price = seed_prices.get(seed_type, base_price)
+        base_xp = self.player.get_xp_for_activity('plant_seed')
+        ratio = price / base_price
+        return max(1, int(base_xp * ratio))
     
     def _get_allowed_grid_coords(self) -> set[tuple[int, int]]:
         """Get grid coordinates adjacent to the farmer (including current cell)."""
@@ -548,17 +635,26 @@ class GameManager:
             return
         
         # Check if it's a seed item
-        if isinstance(selected, Item) and selected.item_type in (ItemType.SEED, ItemType.CARROT_SEED):
+        seed_to_plant = {
+            ItemType.SEED: PlantType.WHEAT,
+            ItemType.CARROT_SEED: PlantType.CARROT,
+            ItemType.TOMATO_SEED: PlantType.TOMATO,
+            ItemType.PUMPKIN_SEED: PlantType.PUMPKIN,
+            ItemType.STRAWBERRY_SEED: PlantType.STRAWBERRY,
+            ItemType.GOLDEN_SEED: PlantType.GOLDEN_WHEAT,
+        }
+        if isinstance(selected, Item) and selected.item_type in seed_to_plant:
             # Try to plant seed on tilled cell
             cell = self.grid.get_cell_at_position(*mouse_pos)
             if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.is_tilled and cell.plant_state == 0:  # EMPTY = 0
-                plant_type = PlantType.CARROT if selected.item_type == ItemType.CARROT_SEED else PlantType.WHEAT
+                plant_type = seed_to_plant[selected.item_type]
                 if cell.plant_seed(plant_type):
                     # Award XP for planting seed
-                    xp_gained = self.player.get_xp_for_activity('plant_seed')
+                    xp_gained = self._get_seed_xp(selected.item_type)
                     self.player.add_xp(xp_gained)
                     # Show XP message
                     self.ui.add_xp_message('plant_seed', xp_gained)
+                    self.tasks_ui.update_task("plant_seed", 1)
                     # Consume one seed
                     selected.quantity -= 1
                     if selected.quantity <= 0:
@@ -608,6 +704,7 @@ class GameManager:
                                 self.player.add_xp(xp_gained)
                                 # Show XP message
                                 self.ui.add_xp_message(xp_activity, xp_gained)
+                                self.tasks_ui.update_task("cut_tree", 1)
                         break
         
         # Handle hammer smashing stones
@@ -633,6 +730,7 @@ class GameManager:
                                 self.player.add_xp(xp_gained)
                                 # Show XP message
                                 self.ui.add_xp_message(xp_activity, xp_gained)
+                                self.tasks_ui.update_task("smash_stone", 1)
                         break
     
     def _check_wood_collection(self, mouse_pos: tuple[int, int]):
@@ -648,6 +746,8 @@ class GameManager:
                         # Inventory full - wood stays on ground
                         tree.wood_dropped = True
                         tree.wood_quantity = wood_collected
+                    else:
+                        self.tasks_ui.update_task("collect_wood", wood_collected)
                 break
 
     def _check_stone_collection(self, mouse_pos: tuple[int, int]):
@@ -663,15 +763,18 @@ class GameManager:
                         # Inventory full - stones stay on ground
                         stone.stone_dropped = True
                         stone.stone_quantity = stone_collected
+                    else:
+                        self.tasks_ui.update_task("collect_stone", stone_collected)
                 break
 
     def _harvest_plant(self, mouse_pos: tuple[int, int]):
         """Harvest a grown plant on right-click"""
         cell = self.grid.get_cell_at_position(*mouse_pos)
         if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.plant_state == 3:  # GROWN = 3
-            wheat_qty = cell.harvest()
-            if wheat_qty > 0:
-                # Wheat is now on the ground in this cell
+            harvested_qty = cell.harvest()
+            if harvested_qty > 0:
+                self.tasks_ui.update_task("harvest_crop", 1)
+                # Crops are now on the ground in this cell
                 pass
 
     def _check_wheat_collection(self, mouse_pos: tuple[int, int]):
@@ -687,6 +790,54 @@ class GameManager:
                     # Return wheat to ground if inventory full
                     cell.has_wheat_dropped = True
                     cell.wheat_quantity = wheat_qty
+    
+    def _check_tomato_collection(self, mouse_pos: tuple[int, int]):
+        """Check if hovering over tomatoes on ground and collect them"""
+        cell = self.grid.get_cell_at_position(*mouse_pos)
+        if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.has_tomato_dropped:
+            tomato_qty = cell.collect_tomato()
+            if tomato_qty > 0:
+                tomato_item = Item(ItemType.TOMATO, tomato_qty)
+                success = self.inventory.add_item(tomato_item)
+                if not success:
+                    cell.has_tomato_dropped = True
+                    cell.tomato_quantity = tomato_qty
+    
+    def _check_pumpkin_collection(self, mouse_pos: tuple[int, int]):
+        """Check if hovering over pumpkins on ground and collect them"""
+        cell = self.grid.get_cell_at_position(*mouse_pos)
+        if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.has_pumpkin_dropped:
+            pumpkin_qty = cell.collect_pumpkin()
+            if pumpkin_qty > 0:
+                pumpkin_item = Item(ItemType.PUMPKIN, pumpkin_qty)
+                success = self.inventory.add_item(pumpkin_item)
+                if not success:
+                    cell.has_pumpkin_dropped = True
+                    cell.pumpkin_quantity = pumpkin_qty
+    
+    def _check_strawberry_collection(self, mouse_pos: tuple[int, int]):
+        """Check if hovering over strawberries on ground and collect them"""
+        cell = self.grid.get_cell_at_position(*mouse_pos)
+        if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.has_strawberry_dropped:
+            strawberry_qty = cell.collect_strawberry()
+            if strawberry_qty > 0:
+                strawberry_item = Item(ItemType.STRAWBERRY, strawberry_qty)
+                success = self.inventory.add_item(strawberry_item)
+                if not success:
+                    cell.has_strawberry_dropped = True
+                    cell.strawberry_quantity = strawberry_qty
+    
+    def _check_golden_wheat_collection(self, mouse_pos: tuple[int, int]):
+        """Check if hovering over golden wheat on ground and collect it"""
+        cell = self.grid.get_cell_at_position(*mouse_pos)
+        if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.has_golden_wheat_dropped:
+            golden_wheat_qty = cell.collect_golden_wheat()
+            if golden_wheat_qty > 0:
+                golden_wheat_item = Item(ItemType.GOLDEN_WHEAT, golden_wheat_qty)
+                success = self.inventory.add_item(golden_wheat_item)
+                if not success:
+                    cell.has_golden_wheat_dropped = True
+                    cell.golden_wheat_quantity = golden_wheat_qty
     
     def _check_carrot_collection(self, mouse_pos: tuple[int, int]):
         """Check if hovering over carrots on ground and collect them"""
@@ -735,14 +886,41 @@ class GameManager:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return "quit"
+            
+            # Handle tasks UI events first if open
+            if self.tasks_ui.is_open:
+                tasks_action = self.tasks_ui.handle_event(event)
+                if tasks_action == "close":
+                    pass  # Tasks UI was closed
+                continue  # Skip other event handling when tasks UI is open
+            
+            # Handle extended inventory UI events first if open
+            if self.extended_inventory_ui.is_open:
+                ext_inv_action = self.extended_inventory_ui.handle_event(event)
+                if ext_inv_action == "close":
+                    pass  # Extended inventory was closed
+                continue  # Skip other event handling when extended inventory is open
+            
+            # Handle shop UI events first if shop is open
+            if self.shop_ui.is_open:
+                shop_action = self.shop_ui.handle_event(event)
+                if shop_action == "close":
+                    pass  # Shop was closed
+                continue  # Skip other event handling when shop is open
+            
             ui_action = self.ui.handle_event(event)
-            if ui_action == "save":
+            if ui_action == "tasks":
+                self.tasks_ui.toggle()
+            elif ui_action == "save":
                 self.save_game()
             elif ui_action == "menu":
                 return "menu"
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return "menu"
+                # E key to toggle extended inventory
+                if event.key == pygame.K_e:
+                    self.extended_inventory_ui.toggle()
                 # Number keys for quick slot selection (0-9)
                 if pygame.K_0 <= event.key <= pygame.K_9:
                     if event.key == pygame.K_0:
@@ -761,6 +939,14 @@ class GameManager:
                 self._check_wheat_collection(event.pos)
                 # Check for carrot collection on hover
                 self._check_carrot_collection(event.pos)
+                # Check for tomato collection on hover
+                self._check_tomato_collection(event.pos)
+                # Check for pumpkin collection on hover
+                self._check_pumpkin_collection(event.pos)
+                # Check for strawberry collection on hover
+                self._check_strawberry_collection(event.pos)
+                # Check for golden wheat collection on hover
+                self._check_golden_wheat_collection(event.pos)
                 # Check for seed collection on hover
                 self._check_seed_collection(event.pos)
                 # Check for carrot seed collection on hover
@@ -794,6 +980,11 @@ class GameManager:
                         self.grid.handle_click(event.pos, self._get_allowed_grid_coords())
                 
                 elif event.button == 3:  # Right click
+                    # Check if clicking on shop building (right-click to open)
+                    if self.shop and self.shop.collision_rect.collidepoint(event.pos):
+                        self.shop_ui.open(self.player, self.inventory)
+                        continue
+                    
                     # Check if clicking on chest
                     if self.chest:
                         if self.chest.render_rect.collidepoint(event.pos):
@@ -839,6 +1030,9 @@ class GameManager:
         
         # Update inventory animations
         self.inventory.update()
+        
+        # Update shop UI
+        self.shop_ui.update(dt)
         
         # Update trees (for shake animation)
         for tree in self.trees:
@@ -947,7 +1141,17 @@ class GameManager:
         slot_total_width = 10 * 45 + 9 * 8  # 10 slots with spacing
         inventory_x = SCREEN_WIDTH // 2 - slot_total_width // 2
         inventory_y = SCREEN_HEIGHT - 80
-        self.inventory_rect = self.inventory.draw(self.screen, inventory_x, inventory_y)
+        mouse_pos = pygame.mouse.get_pos()
+        self.inventory_rect = self.inventory.draw(self.screen, inventory_x, inventory_y, mouse_pos)
+        
+        # Draw shop UI if open
+        self.shop_ui.draw(self.screen)
+        
+        # Draw extended inventory UI if open
+        self.extended_inventory_ui.draw(self.screen)
+        
+        # Draw tasks UI if open
+        self.tasks_ui.draw(self.screen)
         
         # Update display
         pygame.display.flip()

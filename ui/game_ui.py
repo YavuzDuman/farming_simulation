@@ -97,6 +97,15 @@ class GameUI:
         self.message_box_height = 80
         self.message_spacing = 28
         
+        self.tasks_button = Button(
+            SCREEN_WIDTH - 380,
+            15,
+            110,
+            36,
+            "Tasks",
+            (80, 110, 160),
+            (100, 140, 190)
+        )
         self.save_button = Button(
             SCREEN_WIDTH - 260,
             15,
@@ -147,6 +156,8 @@ class GameUI:
     
     def handle_event(self, event: pygame.event.Event) -> Optional[str]:
         """Handle UI events and return action name when clicked."""
+        if self.tasks_button.handle_event(event):
+            return "tasks"
         if self.save_button.handle_event(event):
             return "save"
         if self.menu_button.handle_event(event):
@@ -226,8 +237,7 @@ class GameUI:
         pygame.draw.rect(screen, (139, 69, 19), top_bar, 3)  # Brown border
         
         # Draw username (top-left)
-        username_text = f"Farmer: {self.username}"
-        username_surface = self.font.render(username_text, True, YELLOW)
+        username_surface = self.font.render(self.username, True, YELLOW)
         username_rect = username_surface.get_rect(topleft=(20, 20))
         screen.blit(username_surface, username_rect)
         
@@ -250,7 +260,8 @@ class GameUI:
         title_rect = title_surface.get_rect(center=(SCREEN_WIDTH // 2, 25))
         screen.blit(title_surface, title_rect)
         
-        # Draw save button
+        # Draw tasks/save/menu buttons
+        self.tasks_button.draw(screen, self.button_font)
         self.save_button.draw(screen, self.button_font)
         self.menu_button.draw(screen, self.button_font)
         

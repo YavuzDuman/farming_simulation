@@ -26,6 +26,10 @@ class PlantType:
     """Types of plants that can be grown"""
     WHEAT = "wheat"
     CARROT = "carrot"
+    TOMATO = "tomato"
+    PUMPKIN = "pumpkin"
+    STRAWBERRY = "strawberry"
+    GOLDEN_WHEAT = "golden_wheat"
 
 
 class GridCell:
@@ -49,7 +53,15 @@ class GridCell:
         self.wheat_quantity = 0
         self.has_carrot_dropped = False  # Carrots on ground after harvest
         self.carrot_quantity = 0
-        self.has_seed_dropped = False  # Seeds on ground after harvest
+        self.has_tomato_dropped = False  # Tomatoes on ground after harvest
+        self.tomato_quantity = 0
+        self.has_pumpkin_dropped = False  # Pumpkins on ground after harvest
+        self.pumpkin_quantity = 0
+        self.has_strawberry_dropped = False  # Strawberries on ground after harvest
+        self.strawberry_quantity = 0
+        self.has_golden_wheat_dropped = False  # Golden wheat on ground after harvest
+        self.golden_wheat_quantity = 0
+        self.has_seed_dropped = False  # Wheat seeds on ground after harvest
         self.seed_quantity = 0
         self.has_carrot_seed_dropped = False  # Carrot seeds on ground after harvest
         self.carrot_seed_quantity = 0
@@ -134,6 +146,14 @@ class GridCell:
         """Get growth duration based on plant type"""
         if self.plant_type == PlantType.CARROT:
             return 30.0
+        if self.plant_type == PlantType.TOMATO:
+            return 35.0
+        if self.plant_type == PlantType.PUMPKIN:
+            return 45.0
+        if self.plant_type == PlantType.STRAWBERRY:
+            return 40.0
+        if self.plant_type == PlantType.GOLDEN_WHEAT:
+            return 60.0
         return 30.0
 
     def plant_seed(self, plant_type: str = PlantType.WHEAT):
@@ -156,6 +176,18 @@ class GridCell:
                 # Random chance to drop carrot seeds (20% chance)
                 self.has_carrot_seed_dropped = random.random() < 0.2
                 self.carrot_seed_quantity = 1 if self.has_carrot_seed_dropped else 0
+            elif self.plant_type == PlantType.TOMATO:
+                self.has_tomato_dropped = True
+                self.tomato_quantity = harvest_qty
+            elif self.plant_type == PlantType.PUMPKIN:
+                self.has_pumpkin_dropped = True
+                self.pumpkin_quantity = harvest_qty
+            elif self.plant_type == PlantType.STRAWBERRY:
+                self.has_strawberry_dropped = True
+                self.strawberry_quantity = harvest_qty
+            elif self.plant_type == PlantType.GOLDEN_WHEAT:
+                self.has_golden_wheat_dropped = True
+                self.golden_wheat_quantity = harvest_qty
             else:
                 self.has_wheat_dropped = True
                 self.wheat_quantity = harvest_qty
@@ -198,6 +230,42 @@ class GridCell:
             qty = self.carrot_seed_quantity
             self.has_carrot_seed_dropped = False
             self.carrot_seed_quantity = 0
+            return qty
+        return 0
+    
+    def collect_tomato(self) -> int:
+        """Collect tomatoes from ground. Returns quantity collected."""
+        if self.has_tomato_dropped:
+            qty = self.tomato_quantity
+            self.has_tomato_dropped = False
+            self.tomato_quantity = 0
+            return qty
+        return 0
+    
+    def collect_pumpkin(self) -> int:
+        """Collect pumpkins from ground. Returns quantity collected."""
+        if self.has_pumpkin_dropped:
+            qty = self.pumpkin_quantity
+            self.has_pumpkin_dropped = False
+            self.pumpkin_quantity = 0
+            return qty
+        return 0
+    
+    def collect_strawberry(self) -> int:
+        """Collect strawberries from ground. Returns quantity collected."""
+        if self.has_strawberry_dropped:
+            qty = self.strawberry_quantity
+            self.has_strawberry_dropped = False
+            self.strawberry_quantity = 0
+            return qty
+        return 0
+    
+    def collect_golden_wheat(self) -> int:
+        """Collect golden wheat from ground. Returns quantity collected."""
+        if self.has_golden_wheat_dropped:
+            qty = self.golden_wheat_quantity
+            self.has_golden_wheat_dropped = False
+            self.golden_wheat_quantity = 0
             return qty
         return 0
 
@@ -289,6 +357,33 @@ class GridCell:
                     # Carrot tip peeking
                     pygame.draw.polygon(screen, (240, 140, 40),
                                       [(stalk_x, cy + 12), (stalk_x + 3, cy + 18), (stalk_x - 3, cy + 18)])
+            elif self.plant_type == PlantType.TOMATO:
+                # Fully grown tomato plant
+                pygame.draw.line(screen, (60, 180, 60), (cx, cy + 10), (cx, cy - 6), 3)
+                for offset in [-6, 0, 6]:
+                    pygame.draw.circle(screen, (220, 60, 60), (cx + offset, cy + 6), 4)
+                pygame.draw.circle(screen, (200, 50, 50), (cx, cy + 2), 5)
+            elif self.plant_type == PlantType.PUMPKIN:
+                # Fully grown pumpkin vine
+                pygame.draw.line(screen, (60, 160, 60), (cx - 10, cy + 10), (cx + 10, cy + 10), 3)
+                pygame.draw.ellipse(screen, (240, 140, 40), (cx - 8, cy + 2, 16, 12))
+                pygame.draw.rect(screen, (60, 100, 40), (cx - 2, cy, 4, 4))
+            elif self.plant_type == PlantType.STRAWBERRY:
+                # Fully grown strawberry plant
+                pygame.draw.line(screen, (60, 180, 60), (cx, cy + 10), (cx, cy - 4), 3)
+                pygame.draw.polygon(screen, (255, 80, 100), [(cx, cy + 2), (cx + 6, cy + 12), (cx - 6, cy + 12)])
+                pygame.draw.polygon(screen, (60, 180, 60), [(cx, cy - 4), (cx - 6, cy - 8), (cx + 6, cy - 8)])
+            elif self.plant_type == PlantType.GOLDEN_WHEAT:
+                # Fully grown golden wheat
+                for offset in [-4, 0, 4]:
+                    stalk_x = cx + offset
+                    pygame.draw.line(screen, (255, 220, 100), (stalk_x, cy + 12), (stalk_x, cy - 8), 2)
+                    pygame.draw.ellipse(screen, (255, 200, 50), (stalk_x - 3, cy - 12, 6, 10))
+                    for i in range(3):
+                        grain_y = cy - 10 + i * 3
+                        pygame.draw.line(screen, (255, 180, 0), (stalk_x - 2, grain_y), (stalk_x + 2, grain_y), 1)
+                    pygame.draw.line(screen, (255, 230, 120), (stalk_x, cy + 5), (stalk_x - 5, cy + 12), 2)
+                    pygame.draw.line(screen, (255, 230, 120), (stalk_x, cy + 5), (stalk_x + 5, cy + 12), 2)
             else:
                 # Fully grown wheat
                 # Stalks
@@ -318,6 +413,22 @@ class GridCell:
         # Draw dropped carrots on ground
         if self.has_carrot_dropped:
             self._draw_carrot_on_ground(screen, cx, cy)
+        
+        # Draw dropped tomatoes on ground
+        if self.has_tomato_dropped:
+            self._draw_tomato_on_ground(screen, cx, cy)
+        
+        # Draw dropped pumpkins on ground
+        if self.has_pumpkin_dropped:
+            self._draw_pumpkin_on_ground(screen, cx, cy)
+        
+        # Draw dropped strawberries on ground
+        if self.has_strawberry_dropped:
+            self._draw_strawberry_on_ground(screen, cx, cy)
+        
+        # Draw dropped golden wheat on ground
+        if self.has_golden_wheat_dropped:
+            self._draw_golden_wheat_on_ground(screen, cx, cy)
         
         # Draw dropped seeds on ground
         if self.has_seed_dropped:
@@ -379,6 +490,36 @@ class GridCell:
                            (cx + offset_x - 2, cy - 8), (cx + offset_x + 2, cy - 8), 1)
             pygame.draw.line(screen, (184, 134, 11), 
                            (cx + offset_x - 2, cy - 5), (cx + offset_x + 2, cy - 5), 1)
+    
+    def _draw_tomato_on_ground(self, screen: pygame.Surface, cx: int, cy: int):
+        """Draw tomatoes on the ground"""
+        pygame.draw.ellipse(screen, (30, 30, 30), (cx - 10, cy + 8, 20, 6))
+        for i in range(self.tomato_quantity):
+            offset_x = (i - self.tomato_quantity // 2) * 6
+            pygame.draw.circle(screen, (220, 60, 60), (cx + offset_x, cy + 6), 4)
+    
+    def _draw_pumpkin_on_ground(self, screen: pygame.Surface, cx: int, cy: int):
+        """Draw pumpkins on the ground"""
+        pygame.draw.ellipse(screen, (30, 30, 30), (cx - 12, cy + 8, 24, 6))
+        for i in range(self.pumpkin_quantity):
+            offset_x = (i - self.pumpkin_quantity // 2) * 8
+            pygame.draw.ellipse(screen, (240, 140, 40), (cx + offset_x - 6, cy, 12, 10))
+            pygame.draw.rect(screen, (60, 100, 40), (cx + offset_x - 1, cy - 2, 2, 4))
+    
+    def _draw_strawberry_on_ground(self, screen: pygame.Surface, cx: int, cy: int):
+        """Draw strawberries on the ground"""
+        pygame.draw.ellipse(screen, (30, 30, 30), (cx - 10, cy + 8, 20, 6))
+        for i in range(self.strawberry_quantity):
+            offset_x = (i - self.strawberry_quantity // 2) * 5
+            pygame.draw.polygon(screen, (255, 80, 100), [(cx + offset_x, cy), (cx + offset_x + 4, cy + 8), (cx + offset_x - 4, cy + 8)])
+    
+    def _draw_golden_wheat_on_ground(self, screen: pygame.Surface, cx: int, cy: int):
+        """Draw golden wheat bundle on the ground"""
+        pygame.draw.ellipse(screen, (30, 30, 30), (cx - 10, cy + 8, 20, 6))
+        for i in range(self.golden_wheat_quantity):
+            offset_x = (i - self.golden_wheat_quantity // 2) * 6
+            pygame.draw.line(screen, (255, 220, 100), (cx + offset_x, cy + 10), (cx + offset_x, cy - 5), 2)
+            pygame.draw.ellipse(screen, (255, 200, 50), (cx + offset_x - 2, cy - 10, 4, 8))
 
 
 class Grid:
