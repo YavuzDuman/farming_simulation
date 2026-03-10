@@ -180,40 +180,36 @@ class ExtendedInventoryUI:
         if self.drag_source[0] == 'hotbar':
             source_idx = self.drag_source[1]
             if source_idx != target_idx:
-                # Swap items
+                # Swap slots (including tools)
                 self.inventory.slots[source_idx], self.inventory.slots[target_idx] = \
                     self.inventory.slots[target_idx], self.inventory.slots[source_idx]
         elif self.drag_source[0] == 'extended':
             source_idx = self.drag_source[1]
-            # Only allow items in hotbar slots 4-9 (not tools in 0-3)
-            if target_idx >= 4 or self.inventory.slots[target_idx] is None or isinstance(self.inventory.slots[target_idx], Item):
-                # Swap items
-                self.extended_slots[source_idx], self.inventory.slots[target_idx] = \
-                    self.inventory.slots[target_idx], self.extended_slots[source_idx]
+            # Swap slots (including tools)
+            self.extended_slots[source_idx], self.inventory.slots[target_idx] = \
+                self.inventory.slots[target_idx], self.extended_slots[source_idx]
     
     def _drop_on_extended(self, target_idx: int):
         """Handle dropping an item on an extended slot"""
         if self.drag_source[0] == 'extended':
             source_idx = self.drag_source[1]
             if source_idx != target_idx:
-                # Swap items
+                # Swap slots (including tools)
                 self.extended_slots[source_idx], self.extended_slots[target_idx] = \
                     self.extended_slots[target_idx], self.extended_slots[source_idx]
         elif self.drag_source[0] == 'hotbar':
             source_idx = self.drag_source[1]
-            # Only allow moving items (not tools) to extended slots
-            if isinstance(self.inventory.slots[source_idx], Item) or self.inventory.slots[source_idx] is None:
-                # Swap items
-                self.inventory.slots[source_idx], self.extended_slots[target_idx] = \
-                    self.extended_slots[target_idx], self.inventory.slots[source_idx]
+            # Swap slots (including tools)
+            self.inventory.slots[source_idx], self.extended_slots[target_idx] = \
+                self.extended_slots[target_idx], self.inventory.slots[source_idx]
     
     def _delete_item(self):
         """Delete the dragged item"""
         if self.drag_source[0] == 'hotbar':
-            # Don't delete tools from slots 0-3
-            if self.drag_source[1] >= 4 or isinstance(self.inventory.slots[self.drag_source[1]], Item):
-                self.inventory.slots[self.drag_source[1]] = None
+            # Allow deleting anything from hotbar
+            self.inventory.slots[self.drag_source[1]] = None
         elif self.drag_source[0] == 'extended':
+            # Allow deleting anything from extended slots
             self.extended_slots[self.drag_source[1]] = None
     
     def add_item(self, item: Item) -> bool:

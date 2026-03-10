@@ -2,7 +2,7 @@
 Inventory System - 10-slot inventory with tools and items
 """
 import pygame
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 from enum import Enum
 import sys
 import os
@@ -13,9 +13,21 @@ from config import SEED_GROWTH_TIMES
 class ToolType(Enum):
     """Types of tools available"""
     SWORD = 0
+    IRON_SWORD = 4
+    GOLDEN_SWORD = 5
+    DIAMOND_SWORD = 6
     HOE = 1
     AXE = 2
     HAMMER = 3
+
+
+# Sword damage values
+SWORD_DAMAGE = {
+    ToolType.SWORD: 1,        # Wooden sword - 1 damage (5 hits to kill brute)
+    ToolType.IRON_SWORD: 2,   # Iron sword - 2 damage (3 hits to kill brute)
+    ToolType.GOLDEN_SWORD: 3, # Golden sword - 3 damage (2 hits to kill brute)
+    ToolType.DIAMOND_SWORD: 5 # Diamond sword - 5 damage (1 hit to kill brute)
+}
 
 
 class ItemType(Enum):
@@ -352,17 +364,61 @@ class Tool:
         surface = pygame.Surface((size, size), pygame.SRCALPHA)
         
         if self.tool_type == ToolType.SWORD:
-            # Draw sword
+            # Draw wooden sword
             # Handle
             pygame.draw.rect(surface, (139, 69, 19), (16, 28, 8, 10))
             # Guard
-            pygame.draw.rect(surface, (180, 180, 180), (8, 24, 24, 4))
-            # Blade
-            pygame.draw.polygon(surface, (200, 200, 220), [
+            pygame.draw.rect(surface, (100, 80, 50), (8, 24, 24, 4))
+            # Blade (wooden color)
+            pygame.draw.polygon(surface, (180, 140, 100), [
                 (18, 24), (22, 24), (23, 4), (17, 4)
             ])
             # Blade edge
-            pygame.draw.line(surface, (255, 255, 255), (22, 24), (23, 4), 1)
+            pygame.draw.line(surface, (200, 160, 120), (22, 24), (23, 4), 1)
+            
+        elif self.tool_type == ToolType.IRON_SWORD:
+            # Draw iron sword
+            # Handle
+            pygame.draw.rect(surface, (80, 60, 40), (16, 28, 8, 10))
+            # Guard
+            pygame.draw.rect(surface, (180, 180, 180), (8, 24, 24, 4))
+            # Blade (iron gray)
+            pygame.draw.polygon(surface, (200, 200, 210), [
+                (18, 24), (22, 24), (23, 4), (17, 4)
+            ])
+            # Blade edge
+            pygame.draw.line(surface, (240, 240, 250), (22, 24), (23, 4), 1)
+            
+        elif self.tool_type == ToolType.GOLDEN_SWORD:
+            # Draw golden sword
+            # Handle
+            pygame.draw.rect(surface, (139, 69, 19), (16, 28, 8, 10))
+            # Guard
+            pygame.draw.rect(surface, (255, 215, 0), (8, 24, 24, 4))
+            # Blade (golden)
+            pygame.draw.polygon(surface, (255, 200, 50), [
+                (18, 24), (22, 24), (23, 4), (17, 4)
+            ])
+            # Blade edge
+            pygame.draw.line(surface, (255, 240, 150), (22, 24), (23, 4), 1)
+            # Sparkle
+            pygame.draw.circle(surface, (255, 255, 200), (20, 12), 2)
+            
+        elif self.tool_type == ToolType.DIAMOND_SWORD:
+            # Draw diamond sword
+            # Handle
+            pygame.draw.rect(surface, (60, 50, 40), (16, 28, 8, 10))
+            # Guard
+            pygame.draw.rect(surface, (100, 200, 255), (8, 24, 24, 4))
+            # Blade (diamond blue)
+            pygame.draw.polygon(surface, (150, 220, 255), [
+                (18, 24), (22, 24), (23, 4), (17, 4)
+            ])
+            # Blade edge
+            pygame.draw.line(surface, (200, 240, 255), (22, 24), (23, 4), 1)
+            # Sparkle
+            pygame.draw.circle(surface, (255, 255, 255), (20, 10), 3)
+            pygame.draw.circle(surface, (150, 220, 255), (20, 10), 2)
             
         elif self.tool_type == ToolType.HOE:
             # Draw hoe
@@ -412,7 +468,7 @@ class Tool:
         # Apply shake rotation
         angle = shake_angle
         
-        if self.tool_type == ToolType.SWORD:
+        if self.tool_type in [ToolType.SWORD, ToolType.IRON_SWORD, ToolType.GOLDEN_SWORD, ToolType.DIAMOND_SWORD]:
             self._draw_sword(screen, hand_x, hand_y, direction, angle)
         elif self.tool_type == ToolType.HOE:
             self._draw_hoe(screen, hand_x, hand_y, direction, angle)
@@ -423,26 +479,107 @@ class Tool:
     
     def _draw_sword(self, screen, x, y, direction, angle):
         import math
-        # Sword is held pointing forward/slightly up
-        length = 28
-        rad = math.radians(angle - 45)  # Default angle
+        # Enhanced sword swing animation - more realistic sweeping motion
+        length = 32  # Longer blade
         
+        # Get sword colors based on type
+        if self.tool_type == ToolType.SWORD:
+            blade_color = (180, 140, 100)  # Wooden
+            blade_edge = (200, 160, 120)
+            guard_color = (100, 80, 50)
+            handle_color = (139, 69, 19)
+        elif self.tool_type == ToolType.IRON_SWORD:
+            blade_color = (200, 200, 210)  # Iron gray
+            blade_edge = (240, 240, 250)
+            guard_color = (180, 180, 180)
+            handle_color = (80, 60, 40)
+        elif self.tool_type == ToolType.GOLDEN_SWORD:
+            blade_color = (255, 200, 50)  # Golden
+            blade_edge = (255, 240, 150)
+            guard_color = (255, 215, 0)
+            handle_color = (139, 69, 19)
+        elif self.tool_type == ToolType.DIAMOND_SWORD:
+            blade_color = (150, 220, 255)  # Diamond blue
+            blade_edge = (200, 240, 255)
+            guard_color = (100, 200, 255)
+            handle_color = (60, 50, 40)
+        else:
+            blade_color = (180, 180, 200)
+            blade_edge = (220, 220, 240)
+            guard_color = (160, 140, 100)
+            handle_color = (139, 69, 19)
+        
+        # Base angle depends on swing animation
+        # Swing goes from raised position to slash
+        if angle > 0:
+            # During swing: start from raised (-60), slash through (to +60)
+            swing_progress = angle / 60.0  # 0 to 1
+            base_angle = -60 + (swing_progress * 120)  # -60 to +60
+        else:
+            base_angle = -45  # Resting position
+        
+        # Adjust angle based on direction
+        if direction == 'down':
+            rad = math.radians(base_angle + 90)
+        elif direction == 'up':
+            rad = math.radians(base_angle - 90)
+        elif direction == 'left':
+            rad = math.radians(base_angle + 180)
+        else:  # right
+            rad = math.radians(base_angle)
+        
+        # Calculate blade end position
         end_x = x + int(math.cos(rad) * length)
         end_y = y + int(math.sin(rad) * length)
         
-        # Blade
-        pygame.draw.line(screen, (200, 200, 220), (x, y), (end_x, end_y), 4)
-        # Edge highlight
-        pygame.draw.line(screen, (255, 255, 255), (x, y), (end_x, end_y), 2)
-        # Guard
-        perp_x = int(math.cos(rad + 1.57) * 8)
-        perp_y = int(math.sin(rad + 1.57) * 8)
-        pygame.draw.line(screen, (180, 180, 180), 
-                        (x - perp_x, y - perp_y), (x + perp_x, y + perp_y), 3)
+        # Draw blade with gradient effect
+        # Main blade
+        pygame.draw.line(screen, blade_color, (x, y), (end_x, end_y), 5)
+        # Blade edge (brighter)
+        edge_offset = 2
+        edge_x = x + int(math.cos(rad + 0.1) * length)
+        edge_y = y + int(math.sin(rad + 0.1) * length)
+        pygame.draw.line(screen, blade_edge, (x, y), (edge_x, edge_y), 2)
+        
+        # Blade tip
+        pygame.draw.circle(screen, blade_edge, (end_x, end_y), 3)
+        
+        # Guard (cross guard)
+        perp_x = int(math.cos(rad + 1.57) * 10)
+        perp_y = int(math.sin(rad + 1.57) * 10)
+        pygame.draw.line(screen, guard_color, 
+                        (x - perp_x, y - perp_y), (x + perp_x, y + perp_y), 4)
+        # Guard details
+        pygame.draw.circle(screen, guard_color, (x - perp_x, y - perp_y), 3)
+        pygame.draw.circle(screen, guard_color, (x + perp_x, y + perp_y), 3)
+        
         # Handle
-        handle_end_x = x - int(math.cos(rad) * 8)
-        handle_end_y = y - int(math.sin(rad) * 8)
-        pygame.draw.line(screen, (139, 69, 19), (x, y), (handle_end_x, handle_end_y), 4)
+        handle_end_x = x - int(math.cos(rad) * 12)
+        handle_end_y = y - int(math.sin(rad) * 12)
+        pygame.draw.line(screen, handle_color, (x, y), (handle_end_x, handle_end_y), 5)
+        # Handle wrap
+        for i in range(3):
+            wrap_pos = 0.3 + i * 0.25
+            wrap_x = x - int(math.cos(rad) * 12 * wrap_pos)
+            wrap_y = y - int(math.sin(rad) * 12 * wrap_pos)
+            pygame.draw.circle(screen, (80, 50, 25), (wrap_x, wrap_y), 3)
+        
+        # Pommel
+        pygame.draw.circle(screen, guard_color, (handle_end_x, handle_end_y), 4)
+        
+        # Swing trail effect (motion blur during swing)
+        if angle > 20:
+            trail_alpha = int((angle / 60.0) * 100)
+            trail_surf = pygame.Surface((length * 2, length * 2), pygame.SRCALPHA)
+            for i in range(3):
+                trail_angle = base_angle - (i * 15)
+                trail_rad = math.radians(trail_angle + {'down': 90, 'up': -90, 'left': 180, 'right': 0}.get(direction, 0))
+                trail_end_x = length + int(math.cos(trail_rad) * (length - 5))
+                trail_end_y = length + int(math.sin(trail_rad) * (length - 5))
+                a = max(0, trail_alpha - i * 30)
+                pygame.draw.line(trail_surf, (*blade_color[:3], a), 
+                               (length, length), (trail_end_x, trail_end_y), 3 - i)
+            screen.blit(trail_surf, (x - length, y - length))
     
     def _draw_hoe(self, screen, x, y, direction, angle):
         import math
@@ -693,6 +830,15 @@ class Inventory:
         
         return None
     
+    def get_slot_rects(self, x: int, y: int) -> List[pygame.Rect]:
+        """Get list of slot rectangles for the inventory bar at given position"""
+        slot_rects = []
+        for i in range(len(self.slots)):
+            slot_x = x + i * (self.slot_size + self.slot_spacing)
+            slot_rect = pygame.Rect(slot_x, y, self.slot_size, self.slot_size)
+            slot_rects.append(slot_rect)
+        return slot_rects
+    
     def draw(self, screen: pygame.Surface, x: int, y: int, mouse_pos: tuple = None):
         """Draw the inventory bar at the specified position. If mouse_pos is provided, show tooltip on hover."""
         import math
@@ -745,9 +891,10 @@ class Inventory:
                     qty_text = font.render(str(slot_content.quantity), True, (255, 255, 255))
                     screen.blit(qty_text, (slot_x + self.slot_size - 16, y + self.slot_size - 16))
             
-            # Draw slot number (0-9)
+            # Draw slot number (1-9, then 0 for slot 9)
             font = pygame.font.SysFont('Arial', 12)
-            number_text = font.render(str(i), True, (180, 180, 180))
+            slot_number = i + 1 if i < 9 else 0  # 1-9 for first 9 slots, 0 for last slot
+            number_text = font.render(str(slot_number), True, (180, 180, 180))
             screen.blit(number_text, (slot_x + 3, y + 2))
         
         # Draw tooltip for hovered item
@@ -766,6 +913,21 @@ class Inventory:
             name = slot_content.name
             desc = "A tool for farming"
             extra_lines = []
+            
+            # Add damage info for swords
+            if slot_content.tool_type in [ToolType.SWORD, ToolType.IRON_SWORD, ToolType.GOLDEN_SWORD, ToolType.DIAMOND_SWORD]:
+                damage = SWORD_DAMAGE.get(slot_content.tool_type, 1)
+                desc = "A weapon for combat"
+                extra_lines.append(f"Damage: {damage}")
+                # Add extra info about damage effectiveness
+                if damage == 1:
+                    extra_lines.append("5 hits to kill brute")
+                elif damage == 2:
+                    extra_lines.append("3 hits to kill brute")
+                elif damage == 3:
+                    extra_lines.append("2 hits to kill brute")
+                elif damage >= 5:
+                    extra_lines.append("Instant kill brute!")
         elif isinstance(slot_content, Item):
             name = slot_content.item_type.value.replace('_', ' ').title()
             # Item descriptions

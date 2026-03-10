@@ -6,8 +6,8 @@ from typing import Tuple, List, Optional
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import CHEST_WOOD, CHEST_GOLD, GRID_SIZE, SCREEN_WIDTH, SCREEN_HEIGHT
-from game.inventory import Item, ItemType
+from config import CHEST_WOOD, CHEST_GOLD, GRID_SIZE, SCREEN_WIDTH, SCREEN_HEIGHT, SEED_GROWTH_TIMES
+from game.inventory import Item, Tool, ItemType
 
 
 class Chest:
@@ -42,8 +42,8 @@ class Chest:
             self.height
         )
 
-        # Inventory (2x5 slots)
-        self.slots: List[Optional[Item]] = [None] * 10
+        # Inventory (2x5 slots) - can hold both Items and Tools
+        self.slots: List[Optional[object]] = [None] * 10
         self.slots[0] = Item(ItemType.SEED, 50)  # Wheat seeds
         self.slots[1] = Item(ItemType.CARROT_SEED, 30)  # Carrot seeds
         
@@ -51,6 +51,22 @@ class Chest:
         self.inventory_rect = None
         self.slot_size = 48
         self.slot_spacing = 8
+        
+        # Player inventory reference for transfers
+        self.player_inventory = None
+        
+        # Drag and drop state
+        self.dragging = False
+        self.drag_source = None  # ('chest', slot_idx) or ('player', slot_idx)
+        self.drag_item = None
+        
+        # Slot rects for hover detection
+        self.chest_slot_rects: List[pygame.Rect] = []
+        self.player_slot_rects: List[pygame.Rect] = []
+    
+    def set_player_inventory(self, inventory):
+        """Set reference to player inventory for transfers"""
+        self.player_inventory = inventory
     
     def toggle_inventory(self):
         """Toggle the chest inventory display"""
@@ -59,37 +75,127 @@ class Chest:
     def close_inventory(self):
         """Close the chest inventory"""
         self.is_open = False
+        self.dragging = False
+        self.drag_item = None
+        self.drag_source = None
     
     def handle_click(self, mouse_pos: Tuple[int, int]) -> Optional[Item]:
-        """Handle click on chest inventory slots. Returns item if clicked."""
+        """Handle click on chest inventory slots. Returns item if clicked for legacy compatibility."""
         if not self.is_open or not self.inventory_rect:
             return None
         
         x, y = mouse_pos
-        if not self.inventory_rect.collidepoint(x, y):
-            # Clicked outside inventory, maybe close it?
-            # For now, let GameManager handle closing if needed
-            return None
-            
-        # Check each slot
+        
+        # Update slot rects
+        self._update_slot_rects()
+        
+        # Check chest slots for drag start
+        for i, rect in enumerate(self.chest_slot_rects):
+            if rect.collidepoint(x, y):
+                if self.slots[i]:
+                    self.dragging = True
+                    self.drag_source = ('chest', i)
+                    self.drag_item = self.slots[i]
+                return None
+        
+        # Check player inventory slots for drag start
+        if self.player_inventory:
+            for i, rect in enumerate(self.player_slot_rects):
+                if rect.collidepoint(x, y):
+                    if self.player_inventory.slots[i]:
+                        self.dragging = True
+                        self.drag_source = ('player', i)
+                        self.drag_item = self.player_inventory.slots[i]
+                    return None
+        
+        return None
+    
+    def handle_release(self, mouse_pos: Tuple[int, int], hotbar_rect: pygame.Rect = None, hotbar_slot_rects: List[pygame.Rect] = None):
+        """Handle mouse release for drag and drop"""
+        if not self.dragging or not self.drag_item:
+            self.dragging = False
+            self.drag_item = None
+            self.drag_source = None
+            return
+        
+        x, y = mouse_pos
+        
+        # Check if dropped on chest slots
+        for i, rect in enumerate(self.chest_slot_rects):
+            if rect.collidepoint(x, y):
+                self._drop_on_chest_slot(i)
+                self.dragging = False
+                self.drag_item = None
+                self.drag_source = None
+                return
+        
+        # Check if dropped on hotbar slots
+        if hotbar_slot_rects and self.player_inventory:
+            for i, rect in enumerate(hotbar_slot_rects):
+                if rect.collidepoint(x, y):
+                    self._drop_on_player_slot(i)
+                    self.dragging = False
+                    self.drag_item = None
+                    self.drag_source = None
+                    return
+        
+        # Dropped outside - cancel
+        self.dragging = False
+        self.drag_item = None
+        self.drag_source = None
+    
+    def _drop_on_chest_slot(self, target_idx: int):
+        """Handle dropping an item on a chest slot"""
+        if self.drag_source[0] == 'chest':
+            source_idx = self.drag_source[1]
+            if source_idx != target_idx:
+                # Swap items within chest
+                self.slots[source_idx], self.slots[target_idx] = \
+                    self.slots[target_idx], self.slots[source_idx]
+        elif self.drag_source[0] == 'player' and self.player_inventory:
+            source_idx = self.drag_source[1]
+            # Swap items between player and chest
+            self.player_inventory.slots[source_idx], self.slots[target_idx] = \
+                self.slots[target_idx], self.player_inventory.slots[source_idx]
+    
+    def _drop_on_player_slot(self, target_idx: int):
+        """Handle dropping an item on a player inventory slot"""
+        if not self.player_inventory:
+            return
+        
+        if self.drag_source[0] == 'player':
+            source_idx = self.drag_source[1]
+            if source_idx != target_idx:
+                # Swap slots within player inventory (including tools)
+                self.player_inventory.slots[source_idx], self.player_inventory.slots[target_idx] = \
+                    self.player_inventory.slots[target_idx], self.player_inventory.slots[source_idx]
+        elif self.drag_source[0] == 'chest':
+            source_idx = self.drag_source[1]
+            # Swap items between chest and player (including tools)
+            self.slots[source_idx], self.player_inventory.slots[target_idx] = \
+                self.player_inventory.slots[target_idx], self.slots[source_idx]
+    
+    def _update_slot_rects(self):
+        """Update slot rectangles for hover/click detection"""
+        self.chest_slot_rects = []
+        self.player_slot_rects = []
+        
+        if not self.inventory_rect:
+            return
+        
         cols = 5
         rows = 2
         start_x = self.inventory_rect.x + 10
-        start_y = self.inventory_rect.y + 35 # Leave space for title
+        start_y = self.inventory_rect.y + 35
         
+        # Chest slots only
         for row in range(rows):
             for col in range(cols):
                 idx = row * cols + col
                 slot_x = start_x + col * (self.slot_size + self.slot_spacing)
                 slot_y = start_y + row * (self.slot_size + self.slot_spacing)
                 slot_rect = pygame.Rect(slot_x, slot_y, self.slot_size, self.slot_size)
-                
-                if slot_rect.collidepoint(x, y):
-                    item = self.slots[idx]
-                    if item:
-                        self.slots[idx] = None # Take the item
-                        return item
-        return None
+                self.chest_slot_rects.append(slot_rect)
     
     def handle_key(self, key: int) -> bool:
         """Handle key press. Returns True if key was handled (ESC closes chest)."""
@@ -109,18 +215,20 @@ class Chest:
         return False
 
     def draw_inventory(self, screen: pygame.Surface):
-        """Draw the 2x5 chest inventory"""
+        """Draw the chest inventory (player uses hotbar at bottom for transfers)"""
         if not self.is_open:
             return
-            
+        
+        self._update_slot_rects()
+        
         cols = 5
         rows = 2
         inv_width = cols * self.slot_size + (cols + 1) * self.slot_spacing + 20
         inv_height = rows * self.slot_size + (rows + 1) * self.slot_spacing + 40
         
-        # Center on screen
+        # Center on screen (higher up to not overlap with hotbar)
         inv_x = (SCREEN_WIDTH - inv_width) // 2
-        inv_y = (SCREEN_HEIGHT - inv_height) // 2
+        inv_y = (SCREEN_HEIGHT - inv_height) // 2 - 80
         self.inventory_rect = pygame.Rect(inv_x, inv_y, inv_width, inv_height)
         
         # Draw background
@@ -134,10 +242,10 @@ class Chest:
         
         # Close help
         small_font = pygame.font.SysFont('Arial', 12)
-        help_text = small_font.render("Press ESC or click outside to close", True, (200, 200, 200))
-        screen.blit(help_text, (inv_x + inv_width - 180, inv_y + 12))
+        help_text = small_font.render("Drag items to/from hotbar | ESC to close", True, (200, 200, 200))
+        screen.blit(help_text, (inv_x + inv_width - 220, inv_y + 12))
         
-        # Draw slots
+        # Draw chest slots
         start_x = inv_x + 10
         start_y = inv_y + 35
         
@@ -152,19 +260,125 @@ class Chest:
                 pygame.draw.rect(screen, (30, 25, 20), slot_rect, border_radius=5)
                 pygame.draw.rect(screen, (70, 60, 50), slot_rect, 1, border_radius=5)
                 
-                # Draw item
+                # Draw item (if not being dragged)
                 item = self.slots[idx]
-                if item:
+                if item and not (self.dragging and self.drag_source == ('chest', idx)):
                     # Draw item icon centered in slot
                     icon = item.icon
                     icon_rect = icon.get_rect(center=slot_rect.center)
                     screen.blit(icon, icon_rect)
                     
-                    # Quantity
-                    if item.quantity > 1:
+                    # Quantity (only for Items, not Tools)
+                    if isinstance(item, Item) and item.quantity > 1:
                         qty_font = pygame.font.SysFont('Arial', 14, bold=True)
                         qty_text = qty_font.render(str(item.quantity), True, (255, 255, 255))
                         screen.blit(qty_text, (slot_x + self.slot_size - 18, slot_y + self.slot_size - 18))
+        
+        # Draw dragged item
+        if self.dragging and self.drag_item:
+            mouse_pos = pygame.mouse.get_pos()
+            icon = self.drag_item.icon
+            icon_rect = icon.get_rect(center=mouse_pos)
+            screen.blit(icon, icon_rect)
+        
+        # Draw tooltip for hovered item
+        self._draw_tooltip(screen, pygame.mouse.get_pos())
+    
+    def _draw_tooltip(self, screen: pygame.Surface, mouse_pos: Tuple[int, int]):
+        """Draw tooltip for hovered item"""
+        font = pygame.font.SysFont('Arial', 14)
+        small_font = pygame.font.SysFont('Arial', 12)
+        
+        # Check chest slots for hover
+        for i, rect in enumerate(self.chest_slot_rects):
+            if rect.collidepoint(mouse_pos) and self.slots[i] and not self.dragging:
+                self._draw_item_tooltip(screen, mouse_pos, self.slots[i], font, small_font)
+                return
+    
+    def _draw_item_tooltip(self, screen: pygame.Surface, mouse_pos: Tuple[int, int], 
+                           slot_content, font, small_font):
+        """Draw tooltip for an item"""
+        # Get item name and description
+        if isinstance(slot_content, Tool):
+            name = slot_content.name
+            desc = "A tool for farming"
+            extra_lines = []
+        elif isinstance(slot_content, Item):
+            name = slot_content.item_type.value.replace('_', ' ').title()
+            descriptions = {
+                ItemType.WOOD: "Used for crafting",
+                ItemType.SEED: "Plant to grow wheat",
+                ItemType.CARROT_SEED: "Plant to grow carrots",
+                ItemType.TOMATO_SEED: "Plant to grow tomatoes",
+                ItemType.PUMPKIN_SEED: "Plant to grow pumpkins",
+                ItemType.STRAWBERRY_SEED: "Plant to grow strawberries",
+                ItemType.GOLDEN_SEED: "Rare! Plant for golden wheat",
+                ItemType.WHEAT: "Sell or use for crafting",
+                ItemType.CARROT: "A tasty vegetable",
+                ItemType.TOMATO: "A juicy tomato",
+                ItemType.PUMPKIN: "A large pumpkin",
+                ItemType.STRAWBERRY: "A sweet berry",
+                ItemType.GOLDEN_WHEAT: "Precious golden wheat",
+                ItemType.STONE: "Used for crafting",
+            }
+            desc = descriptions.get(slot_content.item_type, "An item")
+            if slot_content.quantity > 1:
+                desc = f"{desc} (x{slot_content.quantity})"
+            
+            # Add growth time for seeds
+            extra_lines = []
+            seed_growth_map = {
+                ItemType.SEED: 'wheat',
+                ItemType.CARROT_SEED: 'carrot',
+                ItemType.TOMATO_SEED: 'tomato',
+                ItemType.PUMPKIN_SEED: 'pumpkin',
+                ItemType.STRAWBERRY_SEED: 'strawberry',
+                ItemType.GOLDEN_SEED: 'golden_wheat',
+            }
+            if slot_content.item_type in seed_growth_map:
+                growth_key = seed_growth_map[slot_content.item_type]
+                growth_time = SEED_GROWTH_TIMES.get(growth_key, 30)
+                extra_lines.append(f"Growth time: {growth_time}s")
+        else:
+            return
+        
+        # Calculate tooltip dimensions
+        name_surface = font.render(name, True, (255, 255, 255))
+        desc_surface = font.render(desc, True, (200, 200, 200))
+        
+        max_width = max(name_surface.get_width(), desc_surface.get_width())
+        for line in extra_lines:
+            line_surface = small_font.render(line, True, (150, 255, 150))
+            max_width = max(max_width, line_surface.get_width())
+        
+        tooltip_width = max_width + 20
+        tooltip_height = 50 + len(extra_lines) * 18
+        
+        # Position tooltip near mouse
+        tooltip_x = mouse_pos[0] + 15
+        tooltip_y = mouse_pos[1] - tooltip_height - 5
+        
+        # Keep tooltip on screen
+        if tooltip_x + tooltip_width > SCREEN_WIDTH:
+            tooltip_x = mouse_pos[0] - tooltip_width - 15
+        if tooltip_y < 0:
+            tooltip_y = mouse_pos[1] + 20
+        
+        # Draw tooltip background
+        tooltip_rect = pygame.Rect(tooltip_x, tooltip_y, tooltip_width, tooltip_height)
+        pygame.draw.rect(screen, (30, 30, 40), tooltip_rect, border_radius=5)
+        pygame.draw.rect(screen, (100, 100, 120), tooltip_rect, 2, border_radius=5)
+        
+        # Draw name and description
+        screen.blit(name_surface, (tooltip_x + 10, tooltip_y + 8))
+        screen.blit(desc_surface, (tooltip_x + 10, tooltip_y + 28))
+        
+        # Draw extra lines (growth time)
+        y_offset = 48
+        for line in extra_lines:
+            line_surface = small_font.render(line, True, (150, 255, 150))
+            screen.blit(line_surface, (tooltip_x + 10, tooltip_y + y_offset))
+            y_offset += 18
 
     @property
     def sort_y(self) -> int:

@@ -39,6 +39,7 @@ class Player:
             'stone_large': 35,
             'plant_seed': 5,
             'harvest_plant': 10,
+            'zombie_kill': 25,
         }
     
     def _calculate_xp_for_level(self, level: int) -> int:

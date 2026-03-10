@@ -41,6 +41,7 @@ class Farmer:
         self.tool_shake_angle = 0
         self.tool_swing_frame = 0
         self.is_swinging = False
+        self.swing_cooldown = 0  # Cooldown timer for sword attacks
         
         # Hand positions for tool holding (relative to farmer center)
         self.hand_positions = {
@@ -52,9 +53,17 @@ class Farmer:
     
     def start_tool_swing(self):
         """Start the tool swing animation"""
-        if not self.is_swinging:
+        if not self.is_swinging and self.swing_cooldown <= 0:
             self.is_swinging = True
             self.tool_swing_frame = 0
+            self.swing_cooldown = 20  # 20 frames cooldown (~0.33 seconds at 60fps)
+            return True
+        return False
+    
+    def update_swing_cooldown(self):
+        """Update swing cooldown each frame"""
+        if self.swing_cooldown > 0:
+            self.swing_cooldown -= 1
 
     @property
     def render_rect(self) -> pygame.Rect:
@@ -123,11 +132,25 @@ class Farmer:
         # Handle tool swinging animation
         if self.is_swinging:
             self.tool_swing_frame += 1
-            # Swing logic: 0 -> 45 -> 0 degrees over 12 frames
-            if self.tool_swing_frame <= 6:
-                self.tool_shake_angle = self.tool_swing_frame * 10
+            # Enhanced swing logic for more realistic motion
+            # Fast windup, powerful swing through, quick recovery
+            total_frames = 15  # Slightly longer animation
+            if self.tool_swing_frame <= 4:
+                # Windup phase: raise the weapon (0 to 50 degrees)
+                progress = self.tool_swing_frame / 4.0
+                self.tool_shake_angle = int(50 * progress)
+            elif self.tool_swing_frame <= 9:
+                # Swing phase: slash through (50 to -30 degrees)
+                progress = (self.tool_swing_frame - 4) / 5.0
+                self.tool_shake_angle = int(50 - 80 * progress)
             elif self.tool_swing_frame <= 12:
-                self.tool_shake_angle = 60 - (self.tool_swing_frame - 6) * 10
+                # Follow through: continue momentum (-30 to -10 degrees)
+                progress = (self.tool_swing_frame - 9) / 3.0
+                self.tool_shake_angle = int(-30 + 20 * progress)
+            elif self.tool_swing_frame <= total_frames:
+                # Recovery: return to neutral
+                progress = (self.tool_swing_frame - 12) / 3.0
+                self.tool_shake_angle = int(-10 * (1 - progress))
             else:
                 self.is_swinging = False
                 self.tool_swing_frame = 0

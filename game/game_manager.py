@@ -26,7 +26,7 @@ from entities.house import House
 from entities.chest import Chest
 from entities.stone import Stone
 from entities.shop import Shop
-from entities.zombie import Zombie
+from entities.zombie import Zombie, BruteZombie, HealthDrop
 from entities.portal_door import PortalDoor
 from ui.game_ui import GameUI
 from game.inventory import Inventory, ToolType, ItemType, Item
@@ -40,6 +40,11 @@ from ui.confirmation_box import ConfirmationBox
 TARGET_TREE_COUNT = 20
 TARGET_STONE_COUNT = 10
 REGENERATION_DELAY = 60.0  # seconds
+
+# Zombie settings for dark side
+TARGET_ZOMBIE_COUNT = 15
+TARGET_BRUTE_COUNT = 5
+HEALTH_DROP_CHANCE = 0.15  # 15% chance for health drop
 
 
 class GameState:
@@ -81,6 +86,7 @@ class GameManager:
         # Initialize shop UI
         self.shop_ui = ShopUI()
         self.shop_ui.on_buy = self._on_shop_buy
+        self.shop_ui.on_buy_tool = self._on_shop_buy_tool
         self.shop_ui.on_sell = self._on_shop_sell
         
         # Initialize extended inventory UI
@@ -104,6 +110,9 @@ class GameManager:
         
         # Zombies
         self.zombies: List[Zombie] = []
+        
+        # Health drops from zombies
+        self.health_drops: List[HealthDrop] = []
         
         # Fog particles for dark side
         self.fog_particles: List[Dict] = []
@@ -144,6 +153,7 @@ class GameManager:
         # Create chest next to house (one grid cell)
         # Place it at column 5, row 2 (next to house)
         self.chest = Chest(5, 2, GRID_OFFSET_X, GRID_OFFSET_Y)
+        self.chest.set_player_inventory(self.inventory)
         
         # Create shop on the top right of the grid
         # Shop is 4 cells wide, 3 cells tall
@@ -312,6 +322,49 @@ class GameManager:
         self.farmer.held_tool = self.inventory.get_selected_tool()
         return True
     
+    def _on_shop_buy_tool(self, shop_tool) -> bool:
+        """Handle buying a tool from the shop. Returns True if successful."""
+        from ui.shop_ui import ShopTool
+        from game.inventory import Tool
+        if not isinstance(shop_tool, ShopTool):
+            return False
+        
+        # Check if player has enough money
+        if self.player.money < shop_tool.price:
+            return False
+        
+        # Deduct money
+        self.player.spend_money(shop_tool.price)
+        
+        # Create the tool
+        new_tool = Tool(shop_tool.tool_type, shop_tool.name)
+        
+        # Find an empty slot for the tool (slots 0-9, but prefer slots 4-9 for purchased tools)
+        success = False
+        for i in range(4, 10):  # Try slots 4-9 first
+            if self.inventory.slots[i] is None:
+                self.inventory.slots[i] = new_tool
+                success = True
+                break
+        
+        if not success:
+            # Try slots 0-3 only if they're empty (unlikely since they have starting tools)
+            for i in range(4):
+                if self.inventory.slots[i] is None:
+                    self.inventory.slots[i] = new_tool
+                    success = True
+                    break
+        
+        if not success:
+            # Refund money if inventory is full
+            self.player.add_money(shop_tool.price)
+            self.shop_ui.show_message("No empty slot for tool!", (255, 100, 100))
+            return False
+        
+        # Update farmer's held tool
+        self.farmer.held_tool = self.inventory.get_selected_tool()
+        return True
+    
     def _on_shop_sell(self, sell_info) -> bool:
         """Handle selling an item to the shop. Returns True if successful."""
         if not isinstance(sell_info, tuple) or len(sell_info) != 3:
@@ -344,8 +397,11 @@ class GameManager:
         # Spawn player near the dark portal
         self.farmer.x = self.dark_portal.x + GRID_SIZE + 10
         self.farmer.y = self.dark_portal.y + GRID_SIZE // 2
-        # Spawn some zombies
-        self._spawn_zombies(5)
+        # Clear any existing zombies and spawn target count
+        self.zombies = []
+        self.health_drops = []
+        self._spawn_zombies(TARGET_ZOMBIE_COUNT)
+        self._spawn_brute_zombies(TARGET_BRUTE_COUNT)
 
     def _switch_to_farm(self):
         """Transition back to the farm dimension"""
@@ -353,15 +409,27 @@ class GameManager:
         # Spawn player near the farm portal
         self.farmer.x = self.farm_portal.x - 50
         self.farmer.y = self.farm_portal.y + GRID_SIZE // 2
-        # Clear zombies
+        # Clear zombies and health drops
         self.zombies = []
+        self.health_drops = []
 
     def _spawn_zombies(self, count):
-        """Spawn zombies randomly in the dark side"""
+        """Spawn regular zombies randomly in the dark side"""
         for _ in range(count):
             zx = random.randint(GRID_OFFSET_X + 200, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 100)
             zy = random.randint(GRID_OFFSET_Y + 100, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 100)
             self.zombies.append(Zombie(zx, zy))
+    
+    def _spawn_brute_zombies(self, count):
+        """Spawn brute zombies randomly in the dark side"""
+        for _ in range(count):
+            zx = random.randint(GRID_OFFSET_X + 200, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 100)
+            zy = random.randint(GRID_OFFSET_Y + 100, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 100)
+            self.zombies.append(BruteZombie(zx, zy))
+    
+    def _spawn_health_drop(self, x, y):
+        """Spawn a health drop at the given position"""
+        self.health_drops.append(HealthDrop(x, y))
     
     def _init_fog_particles(self):
         """Initialize fog particles for the dark side"""
@@ -800,7 +868,7 @@ class GameManager:
         
         tool = selected
         # Start swing animation
-        self.farmer.start_tool_swing()
+        swing_started = self.farmer.start_tool_swing()
         
         # Handle hoe tilling
         if tool.tool_type == ToolType.HOE:
@@ -862,6 +930,11 @@ class GameManager:
                                 self.ui.add_xp_message(xp_activity, xp_gained)
                                 self.tasks_ui.update_task("smash_stone", 1)
                         break
+        
+        # Handle sword attacking zombies (only in dark side)
+        elif tool.tool_type in [ToolType.SWORD, ToolType.IRON_SWORD, ToolType.GOLDEN_SWORD, ToolType.DIAMOND_SWORD]:
+            if self.current_dimension == "dark_side" and swing_started:
+                self._attack_zombies_with_sword()
     
     def _check_wood_collection(self, mouse_pos: tuple[int, int]):
         """Check if hovering over wood and collect it"""
@@ -879,6 +952,69 @@ class GameManager:
                     else:
                         self.tasks_ui.update_task("collect_wood", wood_collected)
                 break
+    
+    def _attack_zombies_with_sword(self):
+        """Attack nearby zombies with the sword"""
+        from game.inventory import Tool, SWORD_DAMAGE, ToolType
+        
+        farmer_center_x = self.farmer.x + self.farmer.width // 2
+        farmer_center_y = self.farmer.y + self.farmer.height // 2
+        
+        # Get damage from current sword
+        damage = 1  # Default damage
+        current_tool = self.inventory.get_selected_tool()
+        if isinstance(current_tool, Tool) and current_tool.tool_type in SWORD_DAMAGE:
+            damage = SWORD_DAMAGE[current_tool.tool_type]
+        
+        # Attack range (based on sword reach)
+        attack_range = GRID_SIZE * 1.2  # Sword attack range
+        
+        # Attack arc in front of the farmer based on direction
+        direction_offsets = {
+            'down': (0, 30),
+            'up': (0, -30),
+            'left': (-30, 0),
+            'right': (30, 0)
+        }
+        
+        # Get attack center point (in front of farmer)
+        offset = direction_offsets.get(self.farmer.direction, (0, 30))
+        attack_x = farmer_center_x + offset[0]
+        attack_y = farmer_center_y + offset[1]
+        
+        # Check all zombies in range
+        for zombie in self.zombies:
+            if not zombie.is_alive or zombie.is_dying:
+                continue
+            
+            # Calculate distance to zombie
+            dist = math.sqrt((zombie.x - attack_x) ** 2 + (zombie.y - attack_y) ** 2)
+            
+            if dist <= attack_range:
+                # Check if zombie is in front of the farmer (within attack arc)
+                dx = zombie.x - farmer_center_x
+                dy = zombie.y - farmer_center_y
+                
+                # Direction check (zombie should be in the direction farmer is facing)
+                in_arc = False
+                if self.farmer.direction == 'down' and dy > 0:
+                    in_arc = True
+                elif self.farmer.direction == 'up' and dy < 0:
+                    in_arc = True
+                elif self.farmer.direction == 'left' and dx < 0:
+                    in_arc = True
+                elif self.farmer.direction == 'right' and dx > 0:
+                    in_arc = True
+                
+                if in_arc or dist <= 40:  # Always hit if very close
+                    # Deal damage based on sword type
+                    zombie_killed = zombie.take_damage(damage, farmer_center_x, farmer_center_y)
+                    
+                    if zombie_killed:
+                        # Award XP for killing zombie
+                        xp_gained = 25
+                        self.player.add_xp(xp_gained)
+                        self.ui.add_xp_message('zombie_kill', xp_gained)
 
     def _check_stone_collection(self, mouse_pos: tuple[int, int]):
         """Check if hovering over stones and collect them"""
@@ -1063,14 +1199,15 @@ class GameManager:
                 # E key to toggle extended inventory
                 if event.key == pygame.K_e:
                     self.extended_inventory_ui.toggle()
-                # Number keys for quick slot selection (0-9)
+                # Number keys for quick slot selection (1-9 selects slots 0-8, 0 selects slot 9)
                 if pygame.K_0 <= event.key <= pygame.K_9:
                     if event.key == pygame.K_0:
-                        slot = 0
+                        slot = 9  # 0 key selects the last slot (slot 9)
                     else:
-                        slot = event.key - pygame.K_0
-                    self.inventory.select_slot(slot)
-                    self.farmer.held_tool = self.inventory.get_selected_tool()
+                        slot = event.key - pygame.K_1  # 1 key -> slot 0, 2 key -> slot 1, etc.
+                    if 0 <= slot < len(self.inventory.slots):
+                        self.inventory.select_slot(slot)
+                        self.farmer.held_tool = self.inventory.get_selected_tool()
             elif event.type == pygame.MOUSEMOTION:
                 self.grid.handle_hover(event.pos, self._get_allowed_grid_coords())
                 # Check for wood collection on hover
@@ -1099,22 +1236,31 @@ class GameManager:
                     if self.chest and self.chest.is_open:
                         # Check if click is outside chest inventory
                         if self.chest.is_click_outside_inventory(event.pos):
-                            self.chest.close_inventory()
+                            # Also check if not on hotbar
+                            slot_total_width = 10 * 45 + 9 * 8
+                            inventory_x = SCREEN_WIDTH // 2 - slot_total_width // 2
+                            inventory_y = SCREEN_HEIGHT - 80
+                            hotbar_rect = pygame.Rect(inventory_x - 10, inventory_y - 10, 
+                                                      slot_total_width + 20, 45 + 20)
+                            if not hotbar_rect.collidepoint(event.pos):
+                                self.chest.close_inventory()
+                                continue
+                        
+                        # Handle click inside chest inventory (start drag from chest)
+                        self.chest.handle_click(event.pos)
+                        if self.chest.dragging:
                             continue
-                        # Handle click inside chest inventory
-                        item = self.chest.handle_click(event.pos)
-                        if item:
-                            # Transfer to player inventory
-                            success = self.inventory.add_item(item)
-                            if not success:
-                                # Return to chest if inventory full
-                                for i in range(10):
-                                    if self.chest.slots[i] is None:
-                                        self.chest.slots[i] = item
-                                        break
-                            # Update farmer's hand
-                            self.farmer.held_tool = self.inventory.get_selected_tool()
-                            continue
+                        
+                        # Check if clicking on hotbar to start drag from player inventory
+                        hotbar_slot_rects = self.inventory.get_slot_rects(inventory_x, inventory_y)
+                        for i, rect in enumerate(hotbar_slot_rects):
+                            if rect.collidepoint(event.pos):
+                                slot_content = self.inventory.slots[i]
+                                if slot_content:
+                                    self.chest.dragging = True
+                                    self.chest.drag_source = ('player', i)
+                                    self.chest.drag_item = slot_content
+                                continue
 
                     # Check if inventory was clicked
                     if self.inventory_rect and self.inventory_rect.collidepoint(event.pos):
@@ -1160,6 +1306,19 @@ class GameManager:
                     
                     # Try to harvest a grown plant
                     self._harvest_plant(event.pos)
+            
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:  # Left click release
+                    # Handle chest drag and drop release
+                    if self.chest and self.chest.is_open and self.chest.dragging:
+                        # Calculate hotbar slot rects for drop detection
+                        slot_total_width = 10 * 45 + 9 * 8
+                        inventory_x = SCREEN_WIDTH // 2 - slot_total_width // 2
+                        inventory_y = SCREEN_HEIGHT - 80
+                        hotbar_slot_rects = self.inventory.get_slot_rects(inventory_x, inventory_y)
+                        self.chest.handle_release(event.pos, None, hotbar_slot_rects)
+                        # Update farmer's held tool in case item was swapped
+                        self.farmer.held_tool = self.inventory.get_selected_tool()
         
         # Handle continuous key presses for movement
         keys = pygame.key.get_pressed()
@@ -1183,6 +1342,9 @@ class GameManager:
         """Update game state"""
         # Update UI with selected cell info
         self.ui.update(self.grid.selected_cell)
+        
+        # Update farmer swing cooldown
+        self.farmer.update_swing_cooldown()
         
         # Update Health display
         self.ui.update_health_display(
@@ -1258,13 +1420,48 @@ class GameManager:
             player_pos = (self.farmer.x, self.farmer.y)
             for zombie in self.zombies:
                 zombie.update(player_pos, dt)
-                # Check for attack
-                dist = math.sqrt((zombie.x - self.farmer.x)**2 + (zombie.y - self.farmer.y)**2)
-                if dist < 30:
-                    current_time = time.time()
-                    if current_time - zombie.last_attack_time > zombie.attack_cooldown:
-                        self.player.take_damage(zombie.damage)
-                        zombie.last_attack_time = current_time
+                # Check for attack (only from alive zombies not in death animation)
+                if zombie.is_alive and not zombie.is_dying:
+                    dist = math.sqrt((zombie.x - self.farmer.x)**2 + (zombie.y - self.farmer.y)**2)
+                    if dist < 30:
+                        current_time = time.time()
+                        if current_time - zombie.last_attack_time > zombie.attack_cooldown:
+                            self.player.take_damage(zombie.damage)
+                            zombie.last_attack_time = current_time
+            
+            # Remove dead zombies and potentially spawn health drops
+            dead_zombies = [z for z in self.zombies if not z.is_alive]
+            for zombie in dead_zombies:
+                # Chance to spawn health drop when zombie dies
+                if random.random() < HEALTH_DROP_CHANCE:
+                    self._spawn_health_drop(zombie.x, zombie.y)
+            
+            self.zombies = [z for z in self.zombies if z.is_alive]
+            
+            # Update health drops
+            for health_drop in self.health_drops:
+                health_drop.update(dt)
+            # Remove collected/expired health drops
+            self.health_drops = [h for h in self.health_drops if not h.is_collected]
+            
+            # Check for health pickup
+            farmer_rect = pygame.Rect(self.farmer.x - 15, self.farmer.y - 20, 30, 40)
+            for health_drop in self.health_drops:
+                if not health_drop.is_collected and farmer_rect.colliderect(health_drop.rect):
+                    self.player.heal(health_drop.heal_amount)
+                    health_drop.is_collected = True
+            
+            # Respawn regular zombies to maintain target count
+            alive_regular_count = len([z for z in self.zombies if z.zombie_type == "regular"])
+            if alive_regular_count < TARGET_ZOMBIE_COUNT:
+                zombies_to_spawn = TARGET_ZOMBIE_COUNT - alive_regular_count
+                self._spawn_zombies(zombies_to_spawn)
+            
+            # Respawn brute zombies to maintain target count
+            alive_brute_count = len([z for z in self.zombies if z.zombie_type == "brute"])
+            if alive_brute_count < TARGET_BRUTE_COUNT:
+                brutes_to_spawn = TARGET_BRUTE_COUNT - alive_brute_count
+                self._spawn_brute_zombies(brutes_to_spawn)
             
             # Update fog particles
             self._update_fog_particles(dt)
@@ -1348,6 +1545,10 @@ class GameManager:
             # Add dark side objects
             for zombie in self.zombies:
                 render_list.append(('zombie', zombie.sort_y, zombie))
+            
+            # Add health drops
+            for health_drop in self.health_drops:
+                render_list.append(('health_drop', health_drop.sort_y, health_drop))
             
             # Add dark portal
             render_list.append(('portal', self.dark_portal.sort_y, self.dark_portal))

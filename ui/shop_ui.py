@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, BLACK, YELLOW, GREEN, DARK_GREEN, RED
-from game.inventory import ItemType, Item
+from game.inventory import ItemType, Item, Tool, ToolType, SWORD_DAMAGE
 
 
 # Seed unlock levels - which level each seed becomes available
@@ -19,6 +19,24 @@ SEED_UNLOCK_LEVELS = {
     ItemType.STRAWBERRY_SEED: 5, # Strawberry seeds - unlocked at level 5
     ItemType.GOLDEN_SEED: 7,   # Golden seeds - unlocked at level 7
 }
+
+# Tool unlock levels
+TOOL_UNLOCK_LEVELS = {
+    ToolType.IRON_SWORD: 2,
+    ToolType.GOLDEN_SWORD: 5,
+    ToolType.DIAMOND_SWORD: 8,
+}
+
+
+class ShopTool:
+    """Represents a tool that can be bought in the shop"""
+    
+    def __init__(self, name: str, tool_type: ToolType, price: int, description: str = "", unlock_level: int = 1):
+        self.name = name
+        self.tool_type = tool_type
+        self.price = price
+        self.description = description
+        self.unlock_level = unlock_level
 
 
 class ShopItem:
@@ -38,6 +56,7 @@ class ShopUI:
     def __init__(self):
         self.is_open = False
         self.current_tab = "buy"  # "buy" or "sell"
+        self.current_category = "seeds"  # "seeds" or "tools"
         
         # Shop dimensions
         self.width = 600
@@ -52,7 +71,7 @@ class ShopUI:
         self.small_font = pygame.font.SysFont('Arial', 14)
         
         # Define items available for purchase (seeds)
-        self.buy_items: List[ShopItem] = [
+        self.seed_items: List[ShopItem] = [
             ShopItem("Wheat Seeds", ItemType.SEED, 10, "Plant to grow wheat", unlock_level=1),
             ShopItem("Carrot Seeds", ItemType.CARROT_SEED, 15, "Plant to grow carrots", unlock_level=1),
             ShopItem("Tomato Seeds", ItemType.TOMATO_SEED, 25, "Plant to grow tomatoes", unlock_level=3),
@@ -61,15 +80,27 @@ class ShopUI:
             ShopItem("Golden Seeds", ItemType.GOLDEN_SEED, 100, "Rare! Plant to grow golden wheat", unlock_level=7),
         ]
         
+        # Define tools available for purchase
+        self.tool_items: List[ShopTool] = [
+            ShopTool("Iron Sword", ToolType.IRON_SWORD, 150, "Strong iron blade. 2 damage.", unlock_level=2),
+            ShopTool("Golden Sword", ToolType.GOLDEN_SWORD, 300, "Golden blade. 3 damage, faster swing.", unlock_level=5),
+            ShopTool("Diamond Sword", ToolType.DIAMOND_SWORD, 500, "Diamond blade. 5 damage - one hit kill brute!", unlock_level=8),
+        ]
+        
         # Tab buttons
         self.buy_tab_rect = pygame.Rect(self.x + 20, self.y + 50, 100, 35)
         self.sell_tab_rect = pygame.Rect(self.x + 130, self.y + 50, 100, 35)
+        
+        # Category buttons
+        self.seeds_cat_rect = pygame.Rect(self.x + 20, self.y + 95, 100, 30)
+        self.tools_cat_rect = pygame.Rect(self.x + 130, self.y + 95, 100, 30)
         
         # Close button
         self.close_button_rect = pygame.Rect(self.x + self.width - 40, self.y + 10, 30, 30)
         
         # Item button rects (will be updated when drawing)
         self.item_buttons: List[Tuple[pygame.Rect, ShopItem]] = []
+        self.tool_buttons: List[Tuple[pygame.Rect, ShopTool]] = []
         
         # Player reference (set when opened)
         self.player = None
@@ -77,6 +108,7 @@ class ShopUI:
         
         # Callbacks
         self.on_buy: Optional[Callable[[ShopItem], bool]] = None
+        self.on_buy_tool: Optional[Callable[[ShopTool], bool]] = None
         self.on_sell: Optional[Callable[[Item], bool]] = None
         
         # Message to display
@@ -134,8 +166,19 @@ class ShopUI:
                 self.current_tab = "sell"
                 return None
             
+            # Check category buttons (only in buy tab)
+            if self.current_tab == "buy":
+                if self.seeds_cat_rect.collidepoint(mouse_pos):
+                    self.current_category = "seeds"
+                    return None
+                
+                if self.tools_cat_rect.collidepoint(mouse_pos):
+                    self.current_category = "tools"
+                    return None
+            
             # Check item buttons
             if self.current_tab == "buy":
+                # Check seed items
                 for rect, item in self.item_buttons:
                     if rect.collidepoint(mouse_pos):
                         # Try to buy the item
@@ -146,6 +189,19 @@ class ShopUI:
                             else:
                                 self.show_message("Not enough money!", RED)
                         return None
+                
+                # Check tool items
+                for rect, tool in self.tool_buttons:
+                    if rect.collidepoint(mouse_pos):
+                        # Try to buy the tool
+                        if self.on_buy_tool:
+                            success = self.on_buy_tool(tool)
+                            if success:
+                                self.show_message(f"Bought {tool.name}!", GREEN)
+                            else:
+                                self.show_message("Not enough money!", RED)
+                        return None
+                        
             elif self.current_tab == "sell":
                 for rect, sell_info in self.item_buttons:
                     if rect.collidepoint(mouse_pos):
@@ -213,6 +269,25 @@ class ShopUI:
         sell_text_rect = sell_text.get_rect(center=self.sell_tab_rect.center)
         screen.blit(sell_text, sell_text_rect)
         
+        # Draw category buttons (only in buy tab)
+        if self.current_tab == "buy":
+            seeds_color = (100, 140, 100) if self.current_category == "seeds" else (70, 70, 70)
+            tools_color = (100, 140, 100) if self.current_category == "tools" else (70, 70, 70)
+            
+            pygame.draw.rect(screen, seeds_color, self.seeds_cat_rect, border_radius=5)
+            pygame.draw.rect(screen, (120, 160, 120) if self.current_category == "seeds" else (90, 90, 90), 
+                            self.seeds_cat_rect, 2, border_radius=5)
+            seeds_text = self.small_font.render("Seeds", True, WHITE)
+            seeds_text_rect = seeds_text.get_rect(center=self.seeds_cat_rect.center)
+            screen.blit(seeds_text, seeds_text_rect)
+            
+            pygame.draw.rect(screen, tools_color, self.tools_cat_rect, border_radius=5)
+            pygame.draw.rect(screen, (120, 160, 120) if self.current_category == "tools" else (90, 90, 90), 
+                            self.tools_cat_rect, 2, border_radius=5)
+            tools_text = self.small_font.render("Tools", True, WHITE)
+            tools_text_rect = tools_text.get_rect(center=self.tools_cat_rect.center)
+            screen.blit(tools_text, tools_text_rect)
+        
         # Draw content based on current tab
         if self.current_tab == "buy":
             self._draw_buy_tab(screen)
@@ -231,9 +306,10 @@ class ShopUI:
     def _draw_buy_tab(self, screen: pygame.Surface):
         """Draw the buy tab content"""
         self.item_buttons = []
+        self.tool_buttons = []
         
         # Draw items header
-        header_y = self.y + 100
+        header_y = self.y + 135
         pygame.draw.line(screen, (139, 90, 43), (self.x + 20, header_y), 
                         (self.x + self.width - 20, header_y), 2)
         
@@ -242,12 +318,19 @@ class ShopUI:
         if self.player:
             player_level = self.player.level
         
+        if self.current_category == "seeds":
+            self._draw_seeds_category(screen, header_y, player_level)
+        else:
+            self._draw_tools_category(screen, header_y, player_level)
+    
+    def _draw_seeds_category(self, screen: pygame.Surface, header_y: int, player_level: int):
+        """Draw seeds category items"""
         # Draw items for sale
         item_y = header_y + 20
         item_height = 60
         item_spacing = 10
         
-        for i, item in enumerate(self.buy_items):
+        for i, item in enumerate(self.seed_items):
             is_locked = player_level < item.unlock_level
             
             # Item background (darker if locked)
@@ -318,6 +401,92 @@ class ShopUI:
             # Store button rect for click detection (only if not locked)
             if not is_locked:
                 self.item_buttons.append((buy_button_rect, item))
+    
+    def _draw_tools_category(self, screen: pygame.Surface, header_y: int, player_level: int):
+        """Draw tools category items (swords with damage info)"""
+        # Draw tools for sale
+        item_y = header_y + 20
+        item_height = 70
+        item_spacing = 10
+        
+        for i, tool in enumerate(self.tool_items):
+            is_locked = player_level < tool.unlock_level
+            
+            # Item background (darker if locked)
+            item_rect = pygame.Rect(self.x + 30, item_y + i * (item_height + item_spacing), 
+                                   self.width - 60, item_height)
+            bg_color = (30, 30, 30) if is_locked else (50, 50, 50)
+            pygame.draw.rect(screen, bg_color, item_rect, border_radius=5)
+            border_color = (60, 60, 60) if is_locked else (80, 80, 80)
+            pygame.draw.rect(screen, border_color, item_rect, 2, border_radius=5)
+            
+            # Tool icon (use Tool class to get icon)
+            temp_tool = Tool(tool.tool_type, tool.name)
+            icon = temp_tool.icon
+            icon_rect = icon.get_rect(center=(item_rect.left + 30, item_rect.centery))
+            
+            if is_locked:
+                # Draw icon with reduced opacity for locked items
+                icon.set_alpha(128)
+                screen.blit(icon, icon_rect)
+                icon.set_alpha(255)  # Reset alpha
+            else:
+                screen.blit(icon, icon_rect)
+            
+            # Tool name (gray if locked)
+            name_color = (128, 128, 128) if is_locked else WHITE
+            name_surface = self.item_font.render(tool.name, True, name_color)
+            screen.blit(name_surface, (item_rect.left + 60, item_rect.top + 8))
+            
+            # Damage info - always show for swords
+            damage = SWORD_DAMAGE.get(tool.tool_type, 1)
+            damage_text = f"Damage: {damage}"
+            damage_color = (100, 100, 100) if is_locked else (255, 100, 100)
+            damage_surface = self.small_font.render(damage_text, True, damage_color)
+            screen.blit(damage_surface, (item_rect.left + 60, item_rect.top + 28))
+            
+            # Tool description or lock message
+            if is_locked:
+                lock_text = f"Unlocks at level {tool.unlock_level}"
+                desc_surface = self.small_font.render(lock_text, True, (255, 150, 150))
+            else:
+                desc_surface = self.small_font.render(tool.description, True, (180, 180, 180))
+            screen.blit(desc_surface, (item_rect.left + 60, item_rect.top + 45))
+            
+            # Price
+            price_text = f"{tool.price} coins"
+            price_surface = self.item_font.render(price_text, True, YELLOW)
+            price_rect = price_surface.get_rect(right=item_rect.right - 90, centery=item_rect.centery)
+            screen.blit(price_surface, price_rect)
+            
+            # Buy button (disabled if locked or not enough money)
+            buy_button_rect = pygame.Rect(item_rect.right - 80, item_rect.top + 17, 70, 36)
+            can_afford = self.player and self.player.money >= tool.price and not is_locked
+            
+            if is_locked:
+                button_color = (60, 60, 60)
+                border_color = (80, 80, 80)
+            elif can_afford:
+                button_color = (80, 150, 80)
+                border_color = (120, 180, 120)
+            else:
+                button_color = (100, 60, 60)
+                border_color = (140, 100, 100)
+            
+            pygame.draw.rect(screen, button_color, buy_button_rect, border_radius=5)
+            pygame.draw.rect(screen, border_color, buy_button_rect, 2, border_radius=5)
+            
+            # Button text
+            if is_locked:
+                buy_text = self.small_font.render("Locked", True, (150, 150, 150))
+            else:
+                buy_text = self.small_font.render("Buy", True, WHITE)
+            buy_text_rect = buy_text.get_rect(center=buy_button_rect.center)
+            screen.blit(buy_text, buy_text_rect)
+            
+            # Store button rect for click detection (only if not locked)
+            if not is_locked:
+                self.tool_buttons.append((buy_button_rect, tool))
     
     def _draw_sell_tab(self, screen: pygame.Surface):
         """Draw the sell tab content"""
