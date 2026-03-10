@@ -6,14 +6,17 @@ import random
 import time
 import json
 import sqlite3
+import math
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, FPS, SKY_BLUE, GREEN,
-    GRID_OFFSET_X, GRID_OFFSET_Y, GRID_COLS, GRID_ROWS, GRID_SIZE
+    SCREEN_WIDTH, SCREEN_HEIGHT, FPS, SKY_BLUE, GREEN, BLACK,
+    GRID_OFFSET_X, GRID_OFFSET_Y, GRID_COLS, GRID_ROWS, GRID_SIZE,
+    DARK_SIDE_BG, DARK_SIDE_GROUND, DARK_SIDE_BORDER,
+    FOG_COLOR, FOG_PARTICLE_COLOR
 )
 from game.grid import Grid, PlantType
 from game.player import Player
@@ -23,11 +26,14 @@ from entities.house import House
 from entities.chest import Chest
 from entities.stone import Stone
 from entities.shop import Shop
+from entities.zombie import Zombie
+from entities.portal_door import PortalDoor
 from ui.game_ui import GameUI
 from game.inventory import Inventory, ToolType, ItemType, Item
 from ui.shop_ui import ShopUI
 from ui.extended_inventory import ExtendedInventoryUI
 from ui.tasks_ui import TasksUI
+from ui.confirmation_box import ConfirmationBox
 
 
 # Regeneration settings
@@ -82,6 +88,26 @@ class GameManager:
         
         # Initialize tasks UI
         self.tasks_ui = TasksUI()
+        
+        # Dimension system
+        self.current_dimension = "farm"  # "farm" or "dark_side"
+        
+        # Confirmation box
+        self.confirmation_box = ConfirmationBox(
+            "Are you sure going dark side?",
+            on_yes=self._switch_to_dark_side
+        )
+        
+        # Portal doors
+        self.farm_portal = PortalDoor(GRID_COLS - 1, GRID_ROWS // 2, GRID_OFFSET_X, GRID_OFFSET_Y, side="right")
+        self.dark_portal = PortalDoor(0, GRID_ROWS // 2, GRID_OFFSET_X, GRID_OFFSET_Y, side="left")
+        
+        # Zombies
+        self.zombies: List[Zombie] = []
+        
+        # Fog particles for dark side
+        self.fog_particles: List[Dict] = []
+        self._init_fog_particles()
         
         # Create farm objects (trees, house, chest, stones, shop)
         self.trees: List[Tree] = []
@@ -235,14 +261,19 @@ class GameManager:
     def _get_obstacles(self) -> list:
         """Get all objects that the player can't walk through"""
         obstacles = []
-        if self.house:
-            obstacles.append(self.house)
-        if self.chest:
-            obstacles.append(self.chest)
-        if self.shop:
-            obstacles.append(self.shop)
-        obstacles.extend(self.trees)
-        obstacles.extend([s for s in self.stones if s.is_alive])
+        if self.current_dimension == "farm":
+            if self.house:
+                obstacles.append(self.house)
+            if self.chest:
+                obstacles.append(self.chest)
+            if self.shop:
+                obstacles.append(self.shop)
+            obstacles.extend(self.trees)
+            obstacles.extend([s for s in self.stones if s.is_alive])
+            obstacles.append(self.farm_portal)
+        else:
+            # Dark Side obstacles
+            obstacles.append(self.dark_portal)
         return obstacles
     
     def _on_inventory_slot_click(self, slot_index: int):
@@ -306,6 +337,105 @@ class GameManager:
         
         self.shop_ui.show_message(f"Sold for {price} coins!", GREEN)
         return True
+
+    def _switch_to_dark_side(self):
+        """Transition to the dark side dimension"""
+        self.current_dimension = "dark_side"
+        # Spawn player near the dark portal
+        self.farmer.x = self.dark_portal.x + GRID_SIZE + 10
+        self.farmer.y = self.dark_portal.y + GRID_SIZE // 2
+        # Spawn some zombies
+        self._spawn_zombies(5)
+
+    def _switch_to_farm(self):
+        """Transition back to the farm dimension"""
+        self.current_dimension = "farm"
+        # Spawn player near the farm portal
+        self.farmer.x = self.farm_portal.x - 50
+        self.farmer.y = self.farm_portal.y + GRID_SIZE // 2
+        # Clear zombies
+        self.zombies = []
+
+    def _spawn_zombies(self, count):
+        """Spawn zombies randomly in the dark side"""
+        for _ in range(count):
+            zx = random.randint(GRID_OFFSET_X + 200, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 100)
+            zy = random.randint(GRID_OFFSET_Y + 100, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 100)
+            self.zombies.append(Zombie(zx, zy))
+    
+    def _init_fog_particles(self):
+        """Initialize fog particles for the dark side"""
+        self.fog_particles = []
+        num_particles = 50  # Number of fog particles
+        
+        for _ in range(num_particles):
+            particle = {
+                'x': random.randint(GRID_OFFSET_X, GRID_OFFSET_X + GRID_COLS * GRID_SIZE),
+                'y': random.randint(GRID_OFFSET_Y, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE),
+                'size': random.randint(60, 150),
+                'alpha': random.randint(20, 50),
+                'speed_x': random.uniform(-0.3, 0.3),
+                'speed_y': random.uniform(-0.1, 0.1),
+                'pulse_speed': random.uniform(0.5, 1.5),
+                'pulse_phase': random.uniform(0, 6.28)
+            }
+            self.fog_particles.append(particle)
+    
+    def _update_fog_particles(self, dt: float):
+        """Update fog particle positions and animations"""
+        for particle in self.fog_particles:
+            # Move particle
+            particle['x'] += particle['speed_x']
+            particle['y'] += particle['speed_y']
+            particle['pulse_phase'] += particle['pulse_speed'] * dt
+            
+            # Wrap around screen
+            if particle['x'] < GRID_OFFSET_X - particle['size']:
+                particle['x'] = GRID_OFFSET_X + GRID_COLS * GRID_SIZE + particle['size']
+            elif particle['x'] > GRID_OFFSET_X + GRID_COLS * GRID_SIZE + particle['size']:
+                particle['x'] = GRID_OFFSET_X - particle['size']
+            
+            if particle['y'] < GRID_OFFSET_Y - particle['size']:
+                particle['y'] = GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE + particle['size']
+            elif particle['y'] > GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE + particle['size']:
+                particle['y'] = GRID_OFFSET_Y - particle['size']
+    
+    def _draw_fog(self, screen: pygame.Surface):
+        """Draw fog particles on the dark side"""
+        for particle in self.fog_particles:
+            # Calculate pulsing alpha
+            pulse = math.sin(particle['pulse_phase']) * 10
+            alpha = int(max(10, min(60, particle['alpha'] + pulse)))
+            
+            # Create fog particle surface
+            size = particle['size']
+            fog_surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            
+            # Draw gradient circle for fog
+            for i in range(3):
+                r = size - i * 15
+                if r > 0:
+                    a = alpha - i * 5
+                    if a > 0:
+                        pygame.draw.circle(fog_surf, (*FOG_PARTICLE_COLOR, a), (size, size), r)
+            
+            screen.blit(fog_surf, (int(particle['x'] - size), int(particle['y'] - size)))
+    
+    def _draw_dark_side_ambient(self, screen: pygame.Surface):
+        """Draw ambient effects for the dark side"""
+        # Draw vignette effect (darker edges)
+        vignette = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        
+        # Create radial gradient for vignette
+        center_x, center_y = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+        max_dist = math.sqrt(center_x**2 + center_y**2)
+        
+        for i in range(0, int(max_dist), 20):
+            alpha = int((i / max_dist) * 80)
+            pygame.draw.rect(vignette, (0, 0, 0, alpha), 
+                           (center_x - i, center_y - i, i * 2, i * 2), 20)
+        
+        screen.blit(vignette, (0, 0))
     
     def _get_seed_xp(self, seed_type: ItemType) -> int:
         """Get XP for planting a seed based on its shop price."""
@@ -887,6 +1017,11 @@ class GameManager:
             if event.type == pygame.QUIT:
                 return "quit"
             
+            # Handle confirmation box events first if open
+            if self.confirmation_box.is_open:
+                self.confirmation_box.handle_event(event)
+                continue
+
             # Handle tasks UI events first if open
             if self.tasks_ui.is_open:
                 tasks_action = self.tasks_ui.handle_event(event)
@@ -908,6 +1043,15 @@ class GameManager:
                     pass  # Shop was closed
                 continue  # Skip other event handling when shop is open
             
+            # Handle chest inventory ESC key
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    # Close chest if open
+                    if self.chest and self.chest.is_open:
+                        self.chest.close_inventory()
+                        continue
+                    return "menu"
+            
             ui_action = self.ui.handle_event(event)
             if ui_action == "tasks":
                 self.tasks_ui.toggle()
@@ -916,8 +1060,6 @@ class GameManager:
             elif ui_action == "menu":
                 return "menu"
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    return "menu"
                 # E key to toggle extended inventory
                 if event.key == pygame.K_e:
                     self.extended_inventory_ui.toggle()
@@ -953,8 +1095,13 @@ class GameManager:
                 self._check_carrot_seed_collection(event.pos)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
-                    # Check if chest inventory is open and clicked
+                    # Check if chest inventory is open and clicked outside to close
                     if self.chest and self.chest.is_open:
+                        # Check if click is outside chest inventory
+                        if self.chest.is_click_outside_inventory(event.pos):
+                            self.chest.close_inventory()
+                            continue
+                        # Handle click inside chest inventory
                         item = self.chest.handle_click(event.pos)
                         if item:
                             # Transfer to player inventory
@@ -980,12 +1127,32 @@ class GameManager:
                         self.grid.handle_click(event.pos, self._get_allowed_grid_coords())
                 
                 elif event.button == 3:  # Right click
+                    # Check if clicking on portal doors
+                    if self.current_dimension == "farm":
+                        if self.farm_portal.collision_rect.collidepoint(event.pos):
+                            # Check distance
+                            farmer_center = self.farmer.render_rect.center
+                            dist = math.sqrt((farmer_center[0] - self.farm_portal.collision_rect.centerx)**2 + 
+                                             (farmer_center[1] - self.farm_portal.collision_rect.centery)**2)
+                            if dist < GRID_SIZE * 2:
+                                self.confirmation_box.open()
+                                continue
+                    elif self.current_dimension == "dark_side":
+                        if self.dark_portal.collision_rect.collidepoint(event.pos):
+                            # Check distance
+                            farmer_center = self.farmer.render_rect.center
+                            dist = math.sqrt((farmer_center[0] - self.dark_portal.collision_rect.centerx)**2 + 
+                                             (farmer_center[1] - self.dark_portal.collision_rect.centery)**2)
+                            if dist < GRID_SIZE * 2:
+                                self._switch_to_farm()
+                                continue
+
                     # Check if clicking on shop building (right-click to open)
                     if self.shop and self.shop.collision_rect.collidepoint(event.pos):
                         self.shop_ui.open(self.player, self.inventory)
                         continue
                     
-                    # Check if clicking on chest
+                    # Check if clicking on chest (toggle open/close)
                     if self.chest:
                         if self.chest.render_rect.collidepoint(event.pos):
                             self.chest.toggle_inventory()
@@ -1010,12 +1177,19 @@ class GameManager:
             obstacles = self._get_obstacles()
             self.player.move(dx, dy, self.game_bounds, obstacles)
         
-        return True
+        return "continue"
     
     def update(self, dt: float):
         """Update game state"""
         # Update UI with selected cell info
         self.ui.update(self.grid.selected_cell)
+        
+        # Update Health display
+        self.ui.update_health_display(
+            self.player.health,
+            self.player.max_health,
+            self.current_dimension == "dark_side"
+        )
         
         # Update XP display in UI
         self.ui.update_xp_display(
@@ -1034,94 +1208,149 @@ class GameManager:
         # Update shop UI
         self.shop_ui.update(dt)
         
-        # Update trees (for shake animation)
-        for tree in self.trees:
-            tree.update()
-        
-        # Update stones (for shake animation)
-        for stone in self.stones:
-            stone.update()
-        
-        # Update grid (plant growth)
-        self.grid.update(time.time())
-        
-        # Handle tree regeneration
-        current_tree_count = self._count_alive_trees()
-        if current_tree_count < self.last_tree_count:
-            # A tree was cut, start regeneration timer
-            if self.tree_regeneration_timer <= 0:
-                self.tree_regeneration_timer = REGENERATION_DELAY
-        
-        if self.tree_regeneration_timer > 0:
-            self.tree_regeneration_timer -= dt
-            if self.tree_regeneration_timer <= 0:
-                # Time to regenerate trees
-                trees_needed = TARGET_TREE_COUNT - current_tree_count
-                if trees_needed > 0:
-                    self._spawn_trees(trees_needed, self._get_occupied_cells())
-        
-        self.last_tree_count = current_tree_count
-        
-        # Handle stone regeneration
-        current_stone_count = self._count_alive_stones()
-        if current_stone_count < self.last_stone_count:
-            # A stone was smashed, start regeneration timer
-            if self.stone_regeneration_timer <= 0:
-                self.stone_regeneration_timer = REGENERATION_DELAY
-        
-        if self.stone_regeneration_timer > 0:
-            self.stone_regeneration_timer -= dt
-            if self.stone_regeneration_timer <= 0:
-                # Time to regenerate stones
-                stones_needed = TARGET_STONE_COUNT - current_stone_count
-                if stones_needed > 0:
-                    self._spawn_stones(stones_needed, self._get_occupied_cells())
-        
-        self.last_stone_count = current_stone_count
+        if self.current_dimension == "farm":
+            # Update trees (for shake animation)
+            for tree in self.trees:
+                tree.update()
+            
+            # Update stones (for shake animation)
+            for stone in self.stones:
+                stone.update()
+            
+            # Update grid (plant growth)
+            self.grid.update(time.time())
+            
+            # Handle tree regeneration
+            current_tree_count = self._count_alive_trees()
+            if current_tree_count < self.last_tree_count:
+                # A tree was cut, start regeneration timer
+                if self.tree_regeneration_timer <= 0:
+                    self.tree_regeneration_timer = REGENERATION_DELAY
+            
+            if self.tree_regeneration_timer > 0:
+                self.tree_regeneration_timer -= dt
+                if self.tree_regeneration_timer <= 0:
+                    # Time to regenerate trees
+                    trees_needed = TARGET_TREE_COUNT - current_tree_count
+                    if trees_needed > 0:
+                        self._spawn_trees(trees_needed, self._get_occupied_cells())
+            
+            self.last_tree_count = current_tree_count
+            
+            # Handle stone regeneration
+            current_stone_count = self._count_alive_stones()
+            if current_stone_count < self.last_stone_count:
+                # A stone was smashed, start regeneration timer
+                if self.stone_regeneration_timer <= 0:
+                    self.stone_regeneration_timer = REGENERATION_DELAY
+            
+            if self.stone_regeneration_timer > 0:
+                self.stone_regeneration_timer -= dt
+                if self.stone_regeneration_timer <= 0:
+                    # Time to regenerate stones
+                    stones_needed = TARGET_STONE_COUNT - current_stone_count
+                    if stones_needed > 0:
+                        self._spawn_stones(stones_needed, self._get_occupied_cells())
+            
+            self.last_stone_count = current_stone_count
+        else:
+            # Dark Side logic
+            player_pos = (self.farmer.x, self.farmer.y)
+            for zombie in self.zombies:
+                zombie.update(player_pos, dt)
+                # Check for attack
+                dist = math.sqrt((zombie.x - self.farmer.x)**2 + (zombie.y - self.farmer.y)**2)
+                if dist < 30:
+                    current_time = time.time()
+                    if current_time - zombie.last_attack_time > zombie.attack_cooldown:
+                        self.player.take_damage(zombie.damage)
+                        zombie.last_attack_time = current_time
+            
+            # Update fog particles
+            self._update_fog_particles(dt)
+            
+            # Check for death
+            if self.player.health <= 0:
+                self._switch_to_farm()
+                self.player.heal(self.player.max_health)
     
     def draw(self):
         """Draw the game with proper Y-sorting for depth"""
-        # Draw sky background
-        self.screen.fill(SKY_BLUE)
-        
-        # Draw grass area around grid
-        grass_rect = pygame.Rect(
-            GRID_OFFSET_X - 20,
-            GRID_OFFSET_Y - 20,
-            GRID_COLS * GRID_SIZE + 40,
-            GRID_ROWS * GRID_SIZE + 40
-        )
-        pygame.draw.rect(self.screen, GREEN, grass_rect)
-        pygame.draw.rect(self.screen, (0, 50, 0), grass_rect, 3)
-        
-        # Draw grid (ground layer)
-        self.grid.draw(self.screen)
-        
+        # Draw background based on dimension
+        if self.current_dimension == "farm":
+            self.screen.fill(SKY_BLUE)
+            
+            # Draw grass area around grid
+            grass_rect = pygame.Rect(
+                GRID_OFFSET_X - 20,
+                GRID_OFFSET_Y - 20,
+                GRID_COLS * GRID_SIZE + 40,
+                GRID_ROWS * GRID_SIZE + 40
+            )
+            pygame.draw.rect(self.screen, GREEN, grass_rect)
+            pygame.draw.rect(self.screen, (0, 50, 0), grass_rect, 3)
+            
+            # Draw grid (ground layer)
+            self.grid.draw(self.screen, time.time())
+        else:
+            # Dark Side background - very dark and atmospheric
+            self.screen.fill(DARK_SIDE_BG)
+            
+            # Draw ground area with subtle texture
+            dark_rect = pygame.Rect(
+                GRID_OFFSET_X,
+                GRID_OFFSET_Y,
+                GRID_COLS * GRID_SIZE,
+                GRID_ROWS * GRID_SIZE
+            )
+            pygame.draw.rect(self.screen, DARK_SIDE_GROUND, dark_rect)
+            
+            # Draw subtle grid lines (cracked earth effect)
+            for i in range(0, GRID_COLS * GRID_SIZE, GRID_SIZE):
+                alpha = 15 + (i % 100) // 10
+                pygame.draw.line(self.screen, (*DARK_SIDE_BORDER[:3], ), 
+                               (GRID_OFFSET_X + i, GRID_OFFSET_Y),
+                               (GRID_OFFSET_X + i, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE), 1)
+            for i in range(0, GRID_ROWS * GRID_SIZE, GRID_SIZE):
+                pygame.draw.line(self.screen, DARK_SIDE_BORDER, 
+                               (GRID_OFFSET_X, GRID_OFFSET_Y + i),
+                               (GRID_OFFSET_X + GRID_COLS * GRID_SIZE, GRID_OFFSET_Y + i), 1)
+            
+            # Draw border
+            pygame.draw.rect(self.screen, (20, 15, 25), dark_rect, 3)
+
         # Collect all renderable objects with their Y-sort position
         render_list = []
         
         # Add farmer
         render_list.append(('farmer', self.farmer.sort_y, self.farmer))
         
-        # Add trees
-        for tree in self.trees:
-            render_list.append(('tree', tree.sort_y, tree))
-        
-        # Add stones
-        for stone in self.stones:
-            render_list.append(('stone', stone.sort_y, stone))
-        
-        # Add house (draws its own stone path)
-        if self.house:
-            render_list.append(('house', self.house.sort_y, self.house))
-        
-        # Add chest
-        if self.chest:
-            render_list.append(('chest', self.chest.sort_y, self.chest))
-        
-        # Add shop
-        if self.shop:
-            render_list.append(('shop', self.shop.sort_y, self.shop))
+        if self.current_dimension == "farm":
+            # Add farm objects
+            for tree in self.trees:
+                render_list.append(('tree', tree.sort_y, tree))
+            
+            for stone in self.stones:
+                render_list.append(('stone', stone.sort_y, stone))
+            
+            if self.house:
+                render_list.append(('house', self.house.sort_y, self.house))
+            
+            if self.chest:
+                render_list.append(('chest', self.chest.sort_y, self.chest))
+            
+            if self.shop:
+                render_list.append(('shop', self.shop.sort_y, self.shop))
+                
+            # Add farm portal
+            render_list.append(('portal', self.farm_portal.sort_y, self.farm_portal))
+        else:
+            # Add dark side objects
+            for zombie in self.zombies:
+                render_list.append(('zombie', zombie.sort_y, zombie))
+            
+            # Add dark portal
+            render_list.append(('portal', self.dark_portal.sort_y, self.dark_portal))
         
         # Sort by Y position (objects with lower Y drawn first)
         render_list.sort(key=lambda x: x[1])
@@ -1130,11 +1359,22 @@ class GameManager:
         for obj_type, sort_y, obj in render_list:
             obj.draw(self.screen)
         
+        # Draw dark side effects after objects
+        if self.current_dimension == "dark_side":
+            # Draw fog layer
+            self._draw_fog(self.screen)
+            # Draw ambient vignette
+            self._draw_dark_side_ambient(self.screen)
+        
         # Draw UI on top
         self.ui.draw(self.screen)
         
-        # Draw chest inventory if open
-        if self.chest and self.chest.is_open:
+        # Draw confirmation box if open
+        if self.confirmation_box.is_open:
+            self.confirmation_box.draw(self.screen)
+        
+        # Draw chest inventory if open (only in farm)
+        if self.current_dimension == "farm" and self.chest and self.chest.is_open:
             self.chest.draw_inventory(self.screen)
         
         # Draw inventory at bottom of screen (10 slots)

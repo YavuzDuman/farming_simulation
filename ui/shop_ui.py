@@ -10,14 +10,26 @@ from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, BLACK, YELLOW, GREEN, DAR
 from game.inventory import ItemType, Item
 
 
+# Seed unlock levels - which level each seed becomes available
+SEED_UNLOCK_LEVELS = {
+    ItemType.SEED: 1,           # Wheat seeds - unlocked at level 1
+    ItemType.CARROT_SEED: 1,    # Carrot seeds - unlocked at level 1
+    ItemType.TOMATO_SEED: 3,    # Tomato seeds - unlocked at level 3
+    ItemType.PUMPKIN_SEED: 4,   # Pumpkin seeds - unlocked at level 4
+    ItemType.STRAWBERRY_SEED: 5, # Strawberry seeds - unlocked at level 5
+    ItemType.GOLDEN_SEED: 7,   # Golden seeds - unlocked at level 7
+}
+
+
 class ShopItem:
     """Represents an item that can be bought in the shop"""
     
-    def __init__(self, name: str, item_type: ItemType, price: int, description: str = ""):
+    def __init__(self, name: str, item_type: ItemType, price: int, description: str = "", unlock_level: int = 1):
         self.name = name
         self.item_type = item_type
         self.price = price
         self.description = description
+        self.unlock_level = unlock_level
 
 
 class ShopUI:
@@ -41,12 +53,12 @@ class ShopUI:
         
         # Define items available for purchase (seeds)
         self.buy_items: List[ShopItem] = [
-            ShopItem("Wheat Seeds", ItemType.SEED, 10, "Plant to grow wheat"),
-            ShopItem("Carrot Seeds", ItemType.CARROT_SEED, 15, "Plant to grow carrots"),
-            ShopItem("Tomato Seeds", ItemType.TOMATO_SEED, 25, "Plant to grow tomatoes"),
-            ShopItem("Pumpkin Seeds", ItemType.PUMPKIN_SEED, 35, "Plant to grow pumpkins"),
-            ShopItem("Strawberry Seeds", ItemType.STRAWBERRY_SEED, 50, "Plant to grow strawberries"),
-            ShopItem("Golden Seeds", ItemType.GOLDEN_SEED, 100, "Rare! Plant to grow golden wheat"),
+            ShopItem("Wheat Seeds", ItemType.SEED, 10, "Plant to grow wheat", unlock_level=1),
+            ShopItem("Carrot Seeds", ItemType.CARROT_SEED, 15, "Plant to grow carrots", unlock_level=1),
+            ShopItem("Tomato Seeds", ItemType.TOMATO_SEED, 25, "Plant to grow tomatoes", unlock_level=3),
+            ShopItem("Pumpkin Seeds", ItemType.PUMPKIN_SEED, 35, "Plant to grow pumpkins", unlock_level=4),
+            ShopItem("Strawberry Seeds", ItemType.STRAWBERRY_SEED, 50, "Plant to grow strawberries", unlock_level=5),
+            ShopItem("Golden Seeds", ItemType.GOLDEN_SEED, 100, "Rare! Plant to grow golden wheat", unlock_level=7),
         ]
         
         # Tab buttons
@@ -225,30 +237,51 @@ class ShopUI:
         pygame.draw.line(screen, (139, 90, 43), (self.x + 20, header_y), 
                         (self.x + self.width - 20, header_y), 2)
         
+        # Get player level
+        player_level = 1
+        if self.player:
+            player_level = self.player.level
+        
         # Draw items for sale
         item_y = header_y + 20
         item_height = 60
         item_spacing = 10
         
         for i, item in enumerate(self.buy_items):
-            # Item background
+            is_locked = player_level < item.unlock_level
+            
+            # Item background (darker if locked)
             item_rect = pygame.Rect(self.x + 30, item_y + i * (item_height + item_spacing), 
                                    self.width - 60, item_height)
-            pygame.draw.rect(screen, (50, 50, 50), item_rect, border_radius=5)
-            pygame.draw.rect(screen, (80, 80, 80), item_rect, 2, border_radius=5)
+            bg_color = (30, 30, 30) if is_locked else (50, 50, 50)
+            pygame.draw.rect(screen, bg_color, item_rect, border_radius=5)
+            border_color = (60, 60, 60) if is_locked else (80, 80, 80)
+            pygame.draw.rect(screen, border_color, item_rect, 2, border_radius=5)
             
             # Item icon (use Item class to get icon)
             temp_item = Item(item.item_type, 1)
             icon = temp_item.icon
             icon_rect = icon.get_rect(center=(item_rect.left + 30, item_rect.centery))
-            screen.blit(icon, icon_rect)
             
-            # Item name
-            name_surface = self.item_font.render(item.name, True, WHITE)
+            if is_locked:
+                # Draw icon with reduced opacity for locked items
+                icon.set_alpha(128)
+                screen.blit(icon, icon_rect)
+                icon.set_alpha(255)  # Reset alpha
+            else:
+                screen.blit(icon, icon_rect)
+            
+            # Item name (gray if locked)
+            name_color = (128, 128, 128) if is_locked else WHITE
+            name_surface = self.item_font.render(item.name, True, name_color)
             screen.blit(name_surface, (item_rect.left + 60, item_rect.top + 10))
             
-            # Item description
-            desc_surface = self.small_font.render(item.description, True, (180, 180, 180))
+            # Item description or lock message
+            if is_locked:
+                lock_text = f"Unlocks at level {item.unlock_level}"
+                desc_surface = self.small_font.render(lock_text, True, (255, 150, 150))
+            else:
+                desc_surface = self.small_font.render(item.description, True, (180, 180, 180))
             screen.blit(desc_surface, (item_rect.left + 60, item_rect.top + 32))
             
             # Price
@@ -257,18 +290,34 @@ class ShopUI:
             price_rect = price_surface.get_rect(right=item_rect.right - 90, centery=item_rect.centery)
             screen.blit(price_surface, price_rect)
             
-            # Buy button
+            # Buy button (disabled if locked or not enough money)
             buy_button_rect = pygame.Rect(item_rect.right - 80, item_rect.top + 12, 70, 36)
-            button_color = (80, 150, 80) if self.player and self.player.money >= item.price else (100, 60, 60)
+            can_afford = self.player and self.player.money >= item.price and not is_locked
+            
+            if is_locked:
+                button_color = (60, 60, 60)
+                border_color = (80, 80, 80)
+            elif can_afford:
+                button_color = (80, 150, 80)
+                border_color = (120, 180, 120)
+            else:
+                button_color = (100, 60, 60)
+                border_color = (140, 100, 100)
+            
             pygame.draw.rect(screen, button_color, buy_button_rect, border_radius=5)
-            pygame.draw.rect(screen, (120, 180, 120) if self.player and self.player.money >= item.price else (140, 100, 100), 
-                           buy_button_rect, 2, border_radius=5)
-            buy_text = self.small_font.render("Buy", True, WHITE)
+            pygame.draw.rect(screen, border_color, buy_button_rect, 2, border_radius=5)
+            
+            # Button text
+            if is_locked:
+                buy_text = self.small_font.render("Locked", True, (150, 150, 150))
+            else:
+                buy_text = self.small_font.render("Buy", True, WHITE)
             buy_text_rect = buy_text.get_rect(center=buy_button_rect.center)
             screen.blit(buy_text, buy_text_rect)
             
-            # Store button rect for click detection
-            self.item_buttons.append((buy_button_rect, item))
+            # Store button rect for click detection (only if not locked)
+            if not is_locked:
+                self.item_buttons.append((buy_button_rect, item))
     
     def _draw_sell_tab(self, screen: pygame.Surface):
         """Draw the sell tab content"""

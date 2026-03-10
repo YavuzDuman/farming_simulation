@@ -4,6 +4,10 @@ Inventory System - 10-slot inventory with tools and items
 import pygame
 from typing import Optional, Callable
 from enum import Enum
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import SEED_GROWTH_TIMES
 
 
 class ToolType(Enum):
@@ -755,11 +759,13 @@ class Inventory:
     def _draw_tooltip(self, screen: pygame.Surface, mouse_pos: tuple, slot_content):
         """Draw a tooltip for the hovered item"""
         font = pygame.font.SysFont('Arial', 14)
+        small_font = pygame.font.SysFont('Arial', 12)
         
         # Get item name and description
         if isinstance(slot_content, Tool):
             name = slot_content.name
             desc = "A tool for farming"
+            extra_lines = []
         elif isinstance(slot_content, Item):
             name = slot_content.item_type.value.replace('_', ' ').title()
             # Item descriptions
@@ -782,16 +788,38 @@ class Inventory:
             desc = descriptions.get(slot_content.item_type, "An item")
             if slot_content.quantity > 1:
                 desc = f"{desc} (x{slot_content.quantity})"
+            
+            # Add growth time for seeds
+            extra_lines = []
+            seed_growth_map = {
+                ItemType.SEED: 'wheat',
+                ItemType.CARROT_SEED: 'carrot',
+                ItemType.TOMATO_SEED: 'tomato',
+                ItemType.PUMPKIN_SEED: 'pumpkin',
+                ItemType.STRAWBERRY_SEED: 'strawberry',
+                ItemType.GOLDEN_SEED: 'golden_wheat',
+            }
+            if slot_content.item_type in seed_growth_map:
+                growth_key = seed_growth_map[slot_content.item_type]
+                growth_time = SEED_GROWTH_TIMES.get(growth_key, 30)
+                extra_lines.append(f"Growth time: {growth_time}s")
         else:
             name = "Unknown"
             desc = ""
+            extra_lines = []
         
         # Calculate tooltip dimensions
         name_surface = font.render(name, True, (255, 255, 255))
         desc_surface = font.render(desc, True, (200, 200, 200))
         
-        tooltip_width = max(name_surface.get_width(), desc_surface.get_width()) + 20
-        tooltip_height = 50
+        # Calculate width based on longest line
+        max_width = max(name_surface.get_width(), desc_surface.get_width())
+        for line in extra_lines:
+            line_surface = small_font.render(line, True, (150, 255, 150))
+            max_width = max(max_width, line_surface.get_width())
+        
+        tooltip_width = max_width + 20
+        tooltip_height = 50 + len(extra_lines) * 18  # Extra height for growth time lines
         
         # Position tooltip near mouse
         tooltip_x = mouse_pos[0] + 15
@@ -811,6 +839,13 @@ class Inventory:
         # Draw name and description
         screen.blit(name_surface, (tooltip_x + 10, tooltip_y + 8))
         screen.blit(desc_surface, (tooltip_x + 10, tooltip_y + 28))
+        
+        # Draw extra lines (growth time)
+        y_offset = 48
+        for line in extra_lines:
+            line_surface = small_font.render(line, True, (150, 255, 150))
+            screen.blit(line_surface, (tooltip_x + 10, tooltip_y + y_offset))
+            y_offset += 18
 
 
 # Need to import math at module level

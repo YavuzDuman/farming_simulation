@@ -55,7 +55,11 @@ class Chest:
     def toggle_inventory(self):
         """Toggle the chest inventory display"""
         self.is_open = not self.is_open
-
+    
+    def close_inventory(self):
+        """Close the chest inventory"""
+        self.is_open = False
+    
     def handle_click(self, mouse_pos: Tuple[int, int]) -> Optional[Item]:
         """Handle click on chest inventory slots. Returns item if clicked."""
         if not self.is_open or not self.inventory_rect:
@@ -86,6 +90,23 @@ class Chest:
                         self.slots[idx] = None # Take the item
                         return item
         return None
+    
+    def handle_key(self, key: int) -> bool:
+        """Handle key press. Returns True if key was handled (ESC closes chest)."""
+        if self.is_open and key == pygame.K_ESCAPE:
+            self.close_inventory()
+            return True
+        return False
+    
+    def is_click_outside_inventory(self, mouse_pos: Tuple[int, int]) -> bool:
+        """Check if a click is outside the inventory panel (but not on chest itself)."""
+        if not self.is_open or not self.inventory_rect:
+            return False
+        x, y = mouse_pos
+        # Check if click is outside inventory rect
+        if not self.inventory_rect.collidepoint(x, y):
+            return True
+        return False
 
     def draw_inventory(self, screen: pygame.Surface):
         """Draw the 2x5 chest inventory"""
@@ -113,8 +134,8 @@ class Chest:
         
         # Close help
         small_font = pygame.font.SysFont('Arial', 12)
-        help_text = small_font.render("Right-click chest to close", True, (200, 200, 200))
-        screen.blit(help_text, (inv_x + inv_width - 130, inv_y + 12))
+        help_text = small_font.render("Press ESC or click outside to close", True, (200, 200, 200))
+        screen.blit(help_text, (inv_x + inv_width - 180, inv_y + 12))
         
         # Draw slots
         start_x = inv_x + 10

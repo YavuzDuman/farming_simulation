@@ -51,9 +51,47 @@ GRID_OFFSET_Y = 90  # Leave space for UI at top
 # Player settings - Adjusted for smaller grid
 PLAYER_SPEED = 4
 PLAYER_SIZE = 36  # Slightly smaller to fit better
+PLAYER_MAX_HEALTH = 100
+
+# Zombie settings
+ZOMBIE_SPEED = 1.5
+ZOMBIE_DAMAGE = 10
+ZOMBIE_REGEN_TIME = 5.0
+
+# Dark Side colors
+DARK_SIDE_BG = (8, 8, 15)  # Very dark blue-black
+DARK_SIDE_GROUND = (15, 12, 20)  # Dark purple-black ground
+DARK_SIDE_BORDER = (30, 20, 35)  # Subtle border
+DARK_PURPLE = (48, 25, 52)
+
+# Fog colors for dark side
+FOG_COLOR = (20, 18, 30)  # Dark fog
+FOG_PARTICLE_COLOR = (40, 35, 50)  # Slightly lighter fog particles
+
+# Zombie colors (more realistic/rotted look)
+ZOMBIE_SKIN = (72, 85, 65)  # Grayish-green rotting flesh
+ZOMBIE_SKIN_DARK = (45, 55, 42)  # Darker skin shadows
+ZOMBIE_SKIN_LIGHT = (95, 105, 85)  # Lighter skin highlights
+ZOMBIE_CLOTHES = (35, 30, 28)  # Dark tattered clothes
+ZOMBIE_EYE = (180, 20, 20)  # Glowing red eyes
+ZOMBIE_BLOOD = (60, 10, 10)  # Dried blood stains
+
+# Health bar colors
+HEALTH_RED = (200, 30, 30)
+HEALTH_BG = (60, 20, 20)
 
 # Font settings
 FONT_NAME = 'Arial'
 MENU_TITLE_SIZE = 72
 MENU_BUTTON_SIZE = 32
 GAME_UI_SIZE = 24
+
+# Seed growth times (in seconds)
+SEED_GROWTH_TIMES = {
+    'wheat': 30,        # Regular wheat
+    'carrot': 30,       # Carrots
+    'tomato': 35,       # Tomatoes
+    'pumpkin': 45,      # Pumpkins
+    'strawberry': 40,   # Strawberries
+    'golden_wheat': 60  # Golden wheat (rare)
+}

@@ -10,7 +10,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     GRID_SIZE, GRID_COLS, GRID_ROWS, GRID_OFFSET_X, GRID_OFFSET_Y,
-    GREEN, LIGHT_GREEN, DARK_GREEN, BROWN, LIGHT_BROWN, DARK_BROWN
+    GREEN, LIGHT_GREEN, DARK_GREEN, BROWN, LIGHT_BROWN, DARK_BROWN,
+    SEED_GROWTH_TIMES
 )
 
 
@@ -34,6 +35,9 @@ class PlantType:
 
 class GridCell:
     """Represents a single cell in the farm grid"""
+    
+    # Class-level font for timer display (initialized once)
+    _timer_font = None
     
     def __init__(self, col: int, row: int, x: int, y: int):
         self.col = col
@@ -70,6 +74,13 @@ class GridCell:
         self.grass_blades = self._generate_grass_blades()
         # Random soil variation for texture
         self.soil_variation = self._generate_soil_texture()
+    
+    @classmethod
+    def _get_timer_font(cls):
+        """Get or create the timer font (lazy initialization)"""
+        if cls._timer_font is None:
+            cls._timer_font = pygame.font.SysFont('Arial', 12, bold=True)
+        return cls._timer_font
     
     def _generate_grass_blades(self) -> List[Tuple[int, int]]:
         """Generate random grass blade positions for texture"""
@@ -144,17 +155,33 @@ class GridCell:
 
     def _get_growth_duration(self) -> float:
         """Get growth duration based on plant type"""
-        if self.plant_type == PlantType.CARROT:
-            return 30.0
-        if self.plant_type == PlantType.TOMATO:
-            return 35.0
-        if self.plant_type == PlantType.PUMPKIN:
-            return 45.0
-        if self.plant_type == PlantType.STRAWBERRY:
-            return 40.0
-        if self.plant_type == PlantType.GOLDEN_WHEAT:
-            return 60.0
-        return 30.0
+        growth_times = {
+            PlantType.WHEAT: SEED_GROWTH_TIMES['wheat'],
+            PlantType.CARROT: SEED_GROWTH_TIMES['carrot'],
+            PlantType.TOMATO: SEED_GROWTH_TIMES['tomato'],
+            PlantType.PUMPKIN: SEED_GROWTH_TIMES['pumpkin'],
+            PlantType.STRAWBERRY: SEED_GROWTH_TIMES['strawberry'],
+            PlantType.GOLDEN_WHEAT: SEED_GROWTH_TIMES['golden_wheat'],
+        }
+        return float(growth_times.get(self.plant_type, 30.0))
+    
+    def get_remaining_growth_time(self, current_time: float) -> float:
+        """Get remaining time for plant to fully grow. Returns 0 if not growing orfully grown."""
+        if self.plant_state == PlantState.EMPTY:
+            return 0.0
+        if self.plant_state == PlantState.GROWN:
+            return 0.0
+        
+        total_duration = self._get_growth_duration()
+        elapsed = current_time - self.plant_time
+        remaining = total_duration - elapsed
+        return max(0.0, remaining)
+    
+    def get_total_growth_time(self) -> float:
+        """Get total growth time for the current plant type."""
+        if self.plant_state == PlantState.EMPTY:
+            return 0.0
+        return self._get_growth_duration()
 
     def plant_seed(self, plant_type: str = PlantType.WHEAT):
         """Plant a seed in this cell"""
@@ -269,8 +296,8 @@ class GridCell:
             return qty
         return 0
 
-    def draw(self, screen: pygame.Surface):
-        """Draw the cell with realistic texture"""
+    def draw(self, screen: pygame.Surface, current_time: float = None):
+        """Draw the cell with realistic texture. If current_time is provided and plant is growing, show timer."""
         # Draw base
         pygame.draw.rect(screen, self.get_color(), self.rect)
         
@@ -300,6 +327,10 @@ class GridCell:
             
             # Draw plant if present
             self._draw_plant(screen)
+            
+            # Draw growth timer above cell if plant is growing
+            if current_time is not None and self.plant_state != PlantState.EMPTY and self.plant_state != PlantState.GROWN:
+                self._draw_growth_timer(screen, current_time)
         else:
             # Draw grass texture (small blades)
             for bx, by in self.grass_blades:
@@ -320,6 +351,34 @@ class GridCell:
         # Draw selection highlight
         if self.is_selected:
             pygame.draw.rect(screen, (255, 255, 100), self.rect, 3)
+    
+    def _draw_growth_timer(self, screen: pygame.Surface, current_time: float):
+        """Draw the growth timer above the cell"""
+        remaining = self.get_remaining_growth_time(current_time)
+        if remaining <= 0:
+            return
+        
+        # Format time as seconds (rounded to 1 decimal place)
+        timer_text = f"{remaining:.1f}s"
+        
+        # Get font
+        font = self._get_timer_font()
+        
+        # Render text
+        text_surface = font.render(timer_text, True, (255, 255, 255))
+        text_width = text_surface.get_width()
+        text_height = text_surface.get_height()
+        
+        # Position above the cell (centered horizontally)
+        text_x = self.x + (self.width - text_width) // 2
+        text_y = self.y - text_height - 2  # 2 pixels above cell
+        
+        # Draw background for better visibility
+        bg_rect = pygame.Rect(text_x - 2, text_y - 1, text_width + 4, text_height + 2)
+        pygame.draw.rect(screen, (0, 0, 0, 180), bg_rect, border_radius=3)
+        
+        # Draw timer text
+        screen.blit(text_surface, (text_x, text_y))
 
     def _draw_plant(self, screen: pygame.Surface):
         """Draw the plant based on its state"""
@@ -589,8 +648,8 @@ class Grid:
             return self.selected_cell
         return None
     
-    def draw(self, screen: pygame.Surface):
-        """Draw all grid cells"""
+    def draw(self, screen: pygame.Surface, current_time: float = None):
+        """Draw all grid cells. If current_time is provided, show growth timers."""
         for row in self.cells:
             for cell in row:
-                cell.draw(screen)
+                cell.draw(screen, current_time)

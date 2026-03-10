@@ -8,6 +8,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from entities.farmer import Farmer
+from config import PLAYER_MAX_HEALTH
 
 
 class Player:
@@ -23,6 +24,10 @@ class Player:
         
         # Money System
         self.money = 100  # Start with 100 coins
+        
+        # Health System
+        self.max_health = PLAYER_MAX_HEALTH
+        self.health = self.max_health
         
         # XP values for different activities
         self.xp_values = {
@@ -86,6 +91,14 @@ class Player:
         if self.xp_to_next_level == 0:
             return 100.0
         return (self.xp / self.xp_to_next_level) * 100
+    
+    def take_damage(self, amount: int):
+        """Decrease player health"""
+        self.health = max(0, self.health - amount)
+    
+    def heal(self, amount: int):
+        """Increase player health"""
+        self.health = min(self.max_health, self.health + amount)
     
     def move(self, dx: int, dy: int, bounds: pygame.Rect, obstacles: List = None):
         """Move the farmer based on input"""

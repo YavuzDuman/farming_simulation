@@ -9,7 +9,8 @@ from typing import Optional, List, Tuple
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     SCREEN_WIDTH, WHITE, BLACK, GREEN, DARK_GREEN, YELLOW, 
-    GAME_UI_SIZE, FONT_NAME, GRID_OFFSET_Y, GRID_OFFSET_X, GRID_COLS, GRID_SIZE
+    GAME_UI_SIZE, FONT_NAME, GRID_OFFSET_Y, GRID_OFFSET_X, GRID_COLS, GRID_SIZE,
+    HEALTH_RED, HEALTH_BG
 )
 from ui.menu import Button
 
@@ -73,12 +74,19 @@ class GameUI:
         
         # UI State
         self.selected_cell_text = None
+        self.show_health_bar = False
         
         # XP Bar settings
         self.xp_bar_width = 200
         self.xp_bar_height = 20
         self.xp_bar_x = 20
         self.xp_bar_y = 70
+        
+        # Health Bar settings
+        self.health_bar_width = 200
+        self.health_bar_height = 20
+        self.health_bar_x = SCREEN_WIDTH // 2 - 100
+        self.health_bar_y = 85
         
         # XP display values (updated by game manager)
         self.player_level = 1
@@ -88,6 +96,10 @@ class GameUI:
         
         # Money display (updated by game manager)
         self.player_money = 100
+        
+        # Health display
+        self.player_health = 100
+        self.player_max_health = 100
         
         # XP Message box settings (top right of visible area, below top bar)
         self.xp_messages: List[XPMessage] = []
@@ -153,6 +165,12 @@ class GameUI:
     def update_money_display(self, money: int):
         """Update the money display value"""
         self.player_money = money
+    
+    def update_health_display(self, health: int, max_health: int, show: bool):
+        """Update the health display values"""
+        self.player_health = health
+        self.player_max_health = max_health
+        self.show_health_bar = show
     
     def handle_event(self, event: pygame.event.Event) -> Optional[str]:
         """Handle UI events and return action name when clicked."""
@@ -247,6 +265,10 @@ class GameUI:
         # Draw money display (center of navbar, below title)
         self._draw_money_display(screen)
         
+        # Draw health bar if in dark side
+        if self.show_health_bar:
+            self._draw_health_bar(screen)
+        
         # Draw selected cell info (top-right, moved down to avoid overlap)
         if self.selected_cell_text:
             col, row = self.selected_cell_text
@@ -284,3 +306,23 @@ class GameUI:
         money_surface = self.money_font.render(money_text, True, YELLOW)
         money_rect = money_surface.get_rect(midleft=(money_x - 35, money_y))
         screen.blit(money_surface, money_rect)
+
+    def _draw_health_bar(self, screen: pygame.Surface):
+        """Draw the health bar in the center area"""
+        # Draw bar background
+        bar_rect = pygame.Rect(self.health_bar_x, self.health_bar_y, self.health_bar_width, self.health_bar_height)
+        pygame.draw.rect(screen, HEALTH_BG, bar_rect, border_radius=5)
+        pygame.draw.rect(screen, (100, 50, 50), bar_rect, 2, border_radius=5)
+        
+        # Draw health fill
+        health_ratio = self.player_health / self.player_max_health
+        fill_width = int(self.health_bar_width * health_ratio)
+        if fill_width > 0:
+            fill_rect = pygame.Rect(self.health_bar_x, self.health_bar_y, fill_width, self.health_bar_height)
+            pygame.draw.rect(screen, HEALTH_RED, fill_rect, border_radius=5)
+            
+        # Draw health text
+        health_text = f"HP: {self.player_health}/{self.player_max_health}"
+        text_surf = self.small_font.render(health_text, True, WHITE)
+        text_rect = text_surf.get_rect(center=bar_rect.center)
+        screen.blit(text_surf, text_rect)

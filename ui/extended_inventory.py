@@ -6,8 +6,8 @@ from typing import Optional, List, Tuple
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, YELLOW, RED
-from game.inventory import Inventory, Item, Tool, ToolType
+from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE, YELLOW, RED, SEED_GROWTH_TIMES
+from game.inventory import Inventory, Item, Tool, ToolType, ItemType
 
 
 class ExtendedInventoryUI:
@@ -341,3 +341,109 @@ class ExtendedInventoryUI:
             icon = self.drag_item.icon
             icon_rect = icon.get_rect(center=mouse_pos)
             screen.blit(icon, icon_rect)
+        
+        # Draw tooltip for hovered item
+        mouse_pos = pygame.mouse.get_pos()
+        self._draw_tooltip(screen, mouse_pos)
+    
+    def _draw_tooltip(self, screen: pygame.Surface, mouse_pos: Tuple[int, int]):
+        """Draw tooltip for hovered item"""
+        font = pygame.font.SysFont('Arial', 14)
+        small_font = pygame.font.SysFont('Arial', 12)
+        
+        # Check extended slots for hover
+        for i, rect in enumerate(self.extended_slot_rects):
+            if rect.collidepoint(mouse_pos) and self.extended_slots[i] and not self.dragging:
+                self._draw_item_tooltip(screen, mouse_pos, self.extended_slots[i], font, small_font)
+                return
+        
+        # Check hotbar slots for hover
+        for i, rect in enumerate(self.hotbar_slot_rects):
+            if rect.collidepoint(mouse_pos) and self.inventory.slots[i] and not self.dragging:
+                self._draw_item_tooltip(screen, mouse_pos, self.inventory.slots[i], font, small_font)
+                return
+    
+    def _draw_item_tooltip(self, screen: pygame.Surface, mouse_pos: Tuple[int, int], 
+                           slot_content, font, small_font):
+        """Draw tooltip for an item"""
+        # Get item name and description
+        if isinstance(slot_content, Tool):
+            name = slot_content.name
+            desc = "A tool for farming"
+            extra_lines = []
+        elif isinstance(slot_content, Item):
+            name = slot_content.item_type.value.replace('_', ' ').title()
+            descriptions = {
+                ItemType.WOOD: "Used for crafting",
+                ItemType.SEED: "Plant to grow wheat",
+                ItemType.CARROT_SEED: "Plant to grow carrots",
+                ItemType.TOMATO_SEED: "Plant to grow tomatoes",
+                ItemType.PUMPKIN_SEED: "Plant to grow pumpkins",
+                ItemType.STRAWBERRY_SEED: "Plant to grow strawberries",
+                ItemType.GOLDEN_SEED: "Rare! Plant for golden wheat",
+                ItemType.WHEAT: "Sell or use for crafting",
+                ItemType.CARROT: "A tasty vegetable",
+                ItemType.TOMATO: "A juicy tomato",
+                ItemType.PUMPKIN: "A large pumpkin",
+                ItemType.STRAWBERRY: "A sweet berry",
+                ItemType.GOLDEN_WHEAT: "Precious golden wheat",
+                ItemType.STONE: "Used for crafting",
+            }
+            desc = descriptions.get(slot_content.item_type, "An item")
+            if slot_content.quantity > 1:
+                desc = f"{desc} (x{slot_content.quantity})"
+            
+            # Add growth time for seeds
+            extra_lines = []
+            seed_growth_map = {
+                ItemType.SEED: 'wheat',
+                ItemType.CARROT_SEED: 'carrot',
+                ItemType.TOMATO_SEED: 'tomato',
+                ItemType.PUMPKIN_SEED: 'pumpkin',
+                ItemType.STRAWBERRY_SEED: 'strawberry',
+                ItemType.GOLDEN_SEED: 'golden_wheat',
+            }
+            if slot_content.item_type in seed_growth_map:
+                growth_key = seed_growth_map[slot_content.item_type]
+                growth_time = SEED_GROWTH_TIMES.get(growth_key, 30)
+                extra_lines.append(f"Growth time: {growth_time}s")
+        else:
+            return
+        
+        # Calculate tooltip dimensions
+        name_surface = font.render(name, True, (255, 255, 255))
+        desc_surface = font.render(desc, True, (200, 200, 200))
+        
+        max_width = max(name_surface.get_width(), desc_surface.get_width())
+        for line in extra_lines:
+            line_surface = small_font.render(line, True, (150, 255, 150))
+            max_width = max(max_width, line_surface.get_width())
+        
+        tooltip_width = max_width + 20
+        tooltip_height = 50 + len(extra_lines) * 18
+        
+        # Position tooltip near mouse
+        tooltip_x = mouse_pos[0] + 15
+        tooltip_y = mouse_pos[1] - tooltip_height - 5
+        
+        # Keep tooltip on screen
+        if tooltip_x + tooltip_width > SCREEN_WIDTH:
+            tooltip_x = mouse_pos[0] - tooltip_width - 15
+        if tooltip_y < 0:
+            tooltip_y = mouse_pos[1] + 20
+        
+        # Draw tooltip background
+        tooltip_rect = pygame.Rect(tooltip_x, tooltip_y, tooltip_width, tooltip_height)
+        pygame.draw.rect(screen, (30, 30, 40), tooltip_rect, border_radius=5)
+        pygame.draw.rect(screen, (100, 100, 120), tooltip_rect, 2, border_radius=5)
+        
+        # Draw name and description
+        screen.blit(name_surface, (tooltip_x + 10, tooltip_y + 8))
+        screen.blit(desc_surface, (tooltip_x + 10, tooltip_y + 28))
+        
+        # Draw extra lines (growth time)
+        y_offset = 48
+        for line in extra_lines:
+            line_surface = small_font.render(line, True, (150, 255, 150))
+            screen.blit(line_surface, (tooltip_x + 10, tooltip_y + y_offset))
+            y_offset += 18

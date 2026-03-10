@@ -57,6 +57,11 @@ class Farmer:
             self.tool_swing_frame = 0
 
     @property
+    def render_rect(self) -> pygame.Rect:
+        """Get the full rendering rectangle"""
+        return pygame.Rect(self.x, self.y, self.width, self.height)
+
+    @property
     def rect(self) -> pygame.Rect:
         """Get the rectangle for collision detection (feet area)"""
         return pygame.Rect(
