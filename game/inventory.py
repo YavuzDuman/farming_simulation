@@ -48,6 +48,11 @@ class ItemType(Enum):
     PUMPKIN = "pumpkin"
     STRAWBERRY = "strawberry"
     GOLDEN_WHEAT = "golden_wheat"
+    # Animals
+    CHICKEN = "chicken"
+    COW = "cow"
+    # Animal products
+    EGG = "egg"
 
 
 class Item:
@@ -230,6 +235,80 @@ class Item:
             pygame.draw.rect(surface, (255, 215, 0), (10, 28, 20, 4), border_radius=2)
             # Sparkle
             pygame.draw.circle(surface, (255, 255, 200), (14, 14), 2)
+        
+        elif self.item_type == ItemType.CHICKEN:
+            # Draw chicken icon
+            # Body (white oval)
+            pygame.draw.ellipse(surface, (255, 255, 255), (10, 14, 20, 14))
+            pygame.draw.ellipse(surface, (220, 220, 220), (11, 15, 18, 12))
+            # Head
+            pygame.draw.circle(surface, (255, 255, 255), (26, 14), 6)
+            # Comb (red)
+            pygame.draw.ellipse(surface, (220, 50, 50), (24, 6, 6, 5))
+            pygame.draw.ellipse(surface, (220, 50, 50), (22, 4, 4, 4))
+            # Beak (orange)
+            pygame.draw.polygon(surface, (255, 180, 50), [
+                (30, 14), (35, 16), (30, 18)
+            ])
+            # Eye
+            pygame.draw.circle(surface, (30, 30, 30), (27, 13), 2)
+            # Feet
+            pygame.draw.ellipse(surface, (255, 180, 50), (12, 26, 6, 4))
+            pygame.draw.ellipse(surface, (255, 180, 50), (20, 26, 6, 4))
+            # Wing
+            pygame.draw.ellipse(surface, (220, 220, 220), (14, 16, 8, 8))
+            # Tail
+            pygame.draw.ellipse(surface, (220, 220, 220), (6, 12, 6, 8))
+        
+        elif self.item_type == ItemType.COW:
+            # Draw cow icon
+            # Body (white oval)
+            pygame.draw.ellipse(surface, (255, 255, 255), (6, 14, 28, 16))
+            # Spots (black)
+            pygame.draw.ellipse(surface, (40, 40, 40), (10, 16, 8, 6))
+            pygame.draw.ellipse(surface, (40, 40, 40), (22, 20, 6, 5))
+            pygame.draw.ellipse(surface, (40, 40, 40), (14, 22, 5, 4))
+            # Head
+            pygame.draw.ellipse(surface, (255, 255, 255), (28, 8, 10, 12))
+            # Ears
+            pygame.draw.ellipse(surface, (255, 255, 255), (26, 6, 6, 4))
+            pygame.draw.ellipse(surface, (255, 200, 200), (27, 7, 4, 2))
+            pygame.draw.ellipse(surface, (255, 255, 255), (34, 6, 6, 4))
+            pygame.draw.ellipse(surface, (255, 200, 200), (35, 7, 4, 2))
+            # Horns
+            pygame.draw.ellipse(surface, (230, 210, 180), (28, 4, 3, 5))
+            pygame.draw.ellipse(surface, (230, 210, 180), (35, 4, 3, 5))
+            # Nose (pink)
+            pygame.draw.ellipse(surface, (255, 200, 200), (32, 14, 6, 4))
+            # Nostrils
+            pygame.draw.ellipse(surface, (200, 150, 150), (33, 15, 2, 2))
+            pygame.draw.ellipse(surface, (200, 150, 150), (36, 15, 2, 2))
+            # Eye
+            pygame.draw.circle(surface, (255, 255, 255), (31, 11), 2)
+            pygame.draw.circle(surface, (30, 30, 30), (31, 11), 1)
+            # Legs
+            pygame.draw.rect(surface, (255, 255, 255), (8, 28, 4, 6))
+            pygame.draw.rect(surface, (255, 255, 255), (14, 28, 4, 6))
+            pygame.draw.rect(surface, (255, 255, 255), (22, 28, 4, 6))
+            pygame.draw.rect(surface, (255, 255, 255), (28, 28, 4, 6))
+            # Hooves
+            pygame.draw.rect(surface, (60, 50, 40), (8, 32, 4, 2))
+            pygame.draw.rect(surface, (60, 50, 40), (14, 32, 4, 2))
+            pygame.draw.rect(surface, (60, 50, 40), (22, 32, 4, 2))
+            pygame.draw.rect(surface, (60, 50, 40), (28, 32, 4, 2))
+        
+        elif self.item_type == ItemType.EGG:
+            # Draw egg icon
+            # Egg shadow
+            pygame.draw.ellipse(surface, (30, 30, 30), (12, 26, 16, 6))
+            # Egg body (oval, cream colored)
+            pygame.draw.ellipse(surface, (255, 250, 240), (10, 10, 20, 24))
+            # Egg highlight
+            pygame.draw.ellipse(surface, (255, 255, 255), (14, 12, 8, 10))
+            # Subtle speckles
+            pygame.draw.circle(surface, (240, 235, 220), (16, 20), 1)
+            pygame.draw.circle(surface, (240, 235, 220), (22, 24), 1)
+            pygame.draw.circle(surface, (240, 235, 220), (18, 28), 1)
             
         return surface
     
@@ -290,6 +369,13 @@ class Item:
             # Small stone
             pygame.draw.ellipse(screen, (130, 130, 130), (x - 6, y - 4, 12, 8))
             pygame.draw.ellipse(screen, (160, 160, 160), (x - 4, y - 3, 6, 4))
+        elif self.item_type == ItemType.EGG:
+            # Shadow
+            pygame.draw.ellipse(screen, (30, 30, 30), (x - 6, y + 6, 12, 4))
+            # Egg body
+            pygame.draw.ellipse(screen, (255, 250, 240), (x - 6, y - 8, 12, 16))
+            # Egg highlight
+            pygame.draw.ellipse(screen, (255, 255, 255), (x - 4, y - 6, 5, 6))
 
     def draw_in_hand(self, screen: pygame.Surface, x: int, y: int, 
                      direction: str, shake_angle: float = 0):
@@ -946,6 +1032,7 @@ class Inventory:
                 ItemType.STRAWBERRY: "A sweet berry",
                 ItemType.GOLDEN_WHEAT: "Precious golden wheat",
                 ItemType.STONE: "Used for crafting",
+                ItemType.EGG: "Fresh egg from chicken",
             }
             desc = descriptions.get(slot_content.item_type, "An item")
             if slot_content.quantity > 1:

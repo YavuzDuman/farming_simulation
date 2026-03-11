@@ -28,6 +28,9 @@ from entities.stone import Stone
 from entities.shop import Shop
 from entities.zombie import Zombie, BruteZombie, HealthDrop
 from entities.portal_door import PortalDoor
+from entities.chicken import Chicken
+from entities.cow import Cow
+from entities.fence import Fence, FencedArea
 from ui.game_ui import GameUI
 from game.inventory import Inventory, ToolType, ItemType, Item
 from ui.shop_ui import ShopUI
@@ -87,7 +90,16 @@ class GameManager:
         self.shop_ui = ShopUI()
         self.shop_ui.on_buy = self._on_shop_buy
         self.shop_ui.on_buy_tool = self._on_shop_buy_tool
+        self.shop_ui.on_buy_animal = self._on_shop_buy_animal
         self.shop_ui.on_sell = self._on_shop_sell
+        
+        # Animals
+        self.chickens: List[Chicken] = []
+        self.cows: List[Cow] = []
+        
+        # Fenced areas for animals
+        self.chicken_coop: Optional[FencedArea] = None
+        self.cow_pasture: Optional[FencedArea] = None
         
         # Initialize extended inventory UI
         self.extended_inventory_ui = ExtendedInventoryUI(self.inventory)
@@ -160,7 +172,34 @@ class GameManager:
         # Place it at column GRID_COLS - 4, row 0 (top right area)
         self.shop = Shop(GRID_COLS - 4, 0, GRID_OFFSET_X, GRID_OFFSET_Y)
         
-        # Get occupied cells (house, chest, and shop area)
+        # Create fenced areas for animals (side by side near the house)
+        # Chicken coop: 5x4 area to the right of the house
+        self.chicken_coop = FencedArea(
+            name="Chicken Coop",
+            left=7,
+            top=1,
+            width=5,
+            height=4,
+            animal_type="chicken",
+            door_col=9,
+            door_row=4,
+            door_orientation="horizontal"
+        )
+        
+        # Cow pasture: 6x4 area to the right of the chicken coop
+        self.cow_pasture = FencedArea(
+            name="Cow Pasture",
+            left=13,
+            top=1,
+            width=6,
+            height=4,
+            animal_type="cow",
+            door_col=16,
+            door_row=4,
+            door_orientation="horizontal"
+        )
+        
+        # Get occupied cells (house, chest, shop, and fenced areas)
         occupied_cells = self._get_occupied_cells()
         
         # Create trees scattered around the farm
@@ -184,6 +223,25 @@ class GameManager:
         for sc in range(GRID_COLS - 4, GRID_COLS):
             for sr in range(0, 3):
                 occupied.add((sc, sr))
+        
+        # Mark chicken coop area as occupied
+        if self.chicken_coop:
+            for col in range(self.chicken_coop.left, self.chicken_coop.left + self.chicken_coop.width):
+                for row in range(self.chicken_coop.top, self.chicken_coop.top + self.chicken_coop.height):
+                    occupied.add((col, row))
+        
+        # Mark cow pasture area as occupied
+        if self.cow_pasture:
+            for col in range(self.cow_pasture.left, self.cow_pasture.left + self.cow_pasture.width):
+                for row in range(self.cow_pasture.top, self.cow_pasture.top + self.cow_pasture.height):
+                    occupied.add((col, row))
+        
+        # Ensure fence doors are marked as occupied when closed
+        if self.chicken_coop:
+            occupied.add((self.chicken_coop.door_col, self.chicken_coop.door_row))
+        if self.cow_pasture:
+            occupied.add((self.cow_pasture.door_col, self.cow_pasture.door_row))
+        
         return occupied
     
     def _count_alive_trees(self) -> int:
@@ -281,6 +339,11 @@ class GameManager:
             obstacles.extend(self.trees)
             obstacles.extend([s for s in self.stones if s.is_alive])
             obstacles.append(self.farm_portal)
+            # Add fences as obstacles
+            if self.chicken_coop:
+                obstacles.extend(self.chicken_coop.get_obstacles())
+            if self.cow_pasture:
+                obstacles.extend(self.cow_pasture.get_obstacles())
         else:
             # Dark Side obstacles
             obstacles.append(self.dark_portal)
@@ -364,6 +427,57 @@ class GameManager:
         # Update farmer's held tool
         self.farmer.held_tool = self.inventory.get_selected_tool()
         return True
+    
+    def _on_shop_buy_animal(self, shop_animal) -> bool:
+        """Handle buying an animal from the shop. Returns True if successful."""
+        from ui.shop_ui import ShopAnimal
+        if not isinstance(shop_animal, ShopAnimal):
+            return False
+        
+        # Check if player has enough money
+        if self.player.money < shop_animal.price:
+            return False
+        
+        # Deduct money
+        self.player.spend_money(shop_animal.price)
+        
+        # Spawn the animal at a random position on the farm
+        self._spawn_animal(shop_animal.item_type)
+        
+        return True
+    
+    def _spawn_animal(self, animal_type: ItemType):
+        """Spawn an animal in its designated fenced area"""
+        if animal_type == ItemType.CHICKEN and self.chicken_coop:
+            # Spawn chicken in the chicken coop
+            x, y = self.chicken_coop.get_spawn_position()
+            chicken = Chicken(x, y)
+            chicken.fenced_area = self.chicken_coop
+            self.chickens.append(chicken)
+        elif animal_type == ItemType.COW and self.cow_pasture:
+            # Spawn cow in the cow pasture
+            x, y = self.cow_pasture.get_spawn_position()
+            cow = Cow(x, y)
+            cow.fenced_area = self.cow_pasture
+            self.cows.append(cow)
+        else:
+            # Fallback: spawn at random position (shouldn't happen normally)
+            occupied_cells = self._get_occupied_cells()
+            max_attempts = 50
+            for _ in range(max_attempts):
+                col = random.randint(0, GRID_COLS - 1)
+                row = random.randint(0, GRID_ROWS - 1)
+                
+                if (col, row) not in occupied_cells:
+                    x = GRID_OFFSET_X + col * GRID_SIZE + GRID_SIZE // 2
+                    y = GRID_OFFSET_Y + row * GRID_SIZE + GRID_SIZE // 2
+                    
+                    if animal_type == ItemType.CHICKEN:
+                        self.chickens.append(Chicken(x, y))
+                        break
+                    elif animal_type == ItemType.COW:
+                        self.cows.append(Cow(x, y))
+                        break
     
     def _on_shop_sell(self, sell_info) -> bool:
         """Handle selling an item to the shop. Returns True if successful."""
@@ -688,7 +802,23 @@ class GameManager:
                     }
                     for slot in (self.chest.slots if self.chest else [])
                 ]
-            }
+            },
+            "chickens": [
+                {
+                    "x": chicken.x,
+                    "y": chicken.y,
+                    "direction": chicken.direction
+                }
+                for chicken in self.chickens
+            ],
+            "cows": [
+                {
+                    "x": cow.x,
+                    "y": cow.y,
+                    "direction": cow.direction
+                }
+                for cow in self.cows
+            ]
         }
 
     def _apply_entities_state(self, data: Dict[str, Any]):
@@ -768,6 +898,20 @@ class GameManager:
                         new_slots.append(Item(ItemType(slot["item_type"]), slot.get("quantity", 1)))
                 if len(new_slots) == len(self.chest.slots):
                     self.chest.slots = new_slots
+
+        # Load chickens
+        self.chickens = []
+        for chicken_data in data.get("chickens", []):
+            chicken = Chicken(chicken_data["x"], chicken_data["y"])
+            chicken.direction = chicken_data.get("direction", chicken.direction)
+            self.chickens.append(chicken)
+
+        # Load cows
+        self.cows = []
+        for cow_data in data.get("cows", []):
+            cow = Cow(cow_data["x"], cow_data["y"])
+            cow.direction = cow_data.get("direction", cow.direction)
+            self.cows.append(cow)
 
     def _build_save_payload(self) -> Dict[str, Any]:
         """Build the save payload for persistence."""
@@ -952,6 +1096,41 @@ class GameManager:
                     else:
                         self.tasks_ui.update_task("collect_wood", wood_collected)
                 break
+    
+    def _try_feed_animal(self, mouse_pos: tuple[int, int]) -> bool:
+        """Feed an animal if holding grown wheat and clicking on it."""
+        selected = self.inventory.get_selected_tool()
+        if not isinstance(selected, Item) or selected.item_type != ItemType.WHEAT:
+            return False
+        if selected.quantity <= 0:
+            return False
+        
+        farmer_center = self.farmer.render_rect.center
+        max_distance = GRID_SIZE * 2
+        
+        for chicken in self.chickens:
+            if chicken.rect.collidepoint(mouse_pos):
+                dist = math.sqrt((farmer_center[0] - chicken.x) ** 2 + (farmer_center[1] - chicken.y) ** 2)
+                if dist <= max_distance:
+                    chicken.feed()
+                    selected.quantity -= 1
+                    if selected.quantity <= 0:
+                        self.inventory.slots[self.inventory.selected_slot] = None
+                        self.farmer.held_tool = None
+                    return True
+        
+        for cow in self.cows:
+            if cow.rect.collidepoint(mouse_pos):
+                dist = math.sqrt((farmer_center[0] - cow.x) ** 2 + (farmer_center[1] - cow.y) ** 2)
+                if dist <= max_distance:
+                    cow.feed()
+                    selected.quantity -= 1
+                    if selected.quantity <= 0:
+                        self.inventory.slots[self.inventory.selected_slot] = None
+                        self.farmer.held_tool = None
+                    return True
+        
+        return False
     
     def _attack_zombies_with_sword(self):
         """Attack nearby zombies with the sword"""
@@ -1147,6 +1326,29 @@ class GameManager:
                     cell.has_carrot_seed_dropped = True
                     cell.carrot_seed_quantity = seed_qty
     
+    def _check_egg_collection(self, mouse_pos: tuple[int, int]):
+        """Check if hovering over an egg on ground and collect it"""
+        for chicken in self.chickens:
+            if chicken.egg_ready and chicken.egg_drop_position:
+                egg_x, egg_y = chicken.egg_drop_position
+                # Check if mouse is near the egg
+                dist = math.sqrt((mouse_pos[0] - egg_x) ** 2 + (mouse_pos[1] - egg_y) ** 2)
+                if dist < 15:
+                    # Collect the egg
+                    chicken.collect_egg()
+                    # Add egg to inventory
+                    egg_item = Item(ItemType.EGG, 1)
+                    success = self.inventory.add_item(egg_item)
+                    if not success:
+                        # Try extended inventory
+                        success = self.extended_inventory_ui.add_item(egg_item)
+                    if success:
+                        # Award XP for collecting egg
+                        xp_gained = 5
+                        self.player.add_xp(xp_gained)
+                        self.ui.add_xp_message("collect_egg", xp_gained)
+                    break
+    
     def handle_events(self) -> str:
         """Handle game events, returns 'quit', 'menu', or 'continue'"""
         for event in pygame.event.get():
@@ -1230,16 +1432,20 @@ class GameManager:
                 self._check_seed_collection(event.pos)
                 # Check for carrot seed collection on hover
                 self._check_carrot_seed_collection(event.pos)
+                # Check for egg collection on hover
+                self._check_egg_collection(event.pos)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
                     # Check if chest inventory is open and clicked outside to close
                     if self.chest and self.chest.is_open:
+                        # Calculate hotbar position for click detection
+                        slot_total_width = 10 * 45 + 9 * 8
+                        inventory_x = SCREEN_WIDTH // 2 - slot_total_width // 2
+                        inventory_y = SCREEN_HEIGHT - 80
+                        
                         # Check if click is outside chest inventory
                         if self.chest.is_click_outside_inventory(event.pos):
                             # Also check if not on hotbar
-                            slot_total_width = 10 * 45 + 9 * 8
-                            inventory_x = SCREEN_WIDTH // 2 - slot_total_width // 2
-                            inventory_y = SCREEN_HEIGHT - 80
                             hotbar_rect = pygame.Rect(inventory_x - 10, inventory_y - 10, 
                                                       slot_total_width + 20, 45 + 20)
                             if not hotbar_rect.collidepoint(event.pos):
@@ -1293,6 +1499,15 @@ class GameManager:
                                 self._switch_to_farm()
                                 continue
 
+                    # Check if clicking on fence doors (toggle open/close)
+                    if self.current_dimension == "farm":
+                        if self.chicken_coop and self.chicken_coop.is_door_clicked(event.pos):
+                            self.chicken_coop.toggle_door()
+                            continue
+                        if self.cow_pasture and self.cow_pasture.is_door_clicked(event.pos):
+                            self.cow_pasture.toggle_door()
+                            continue
+
                     # Check if clicking on shop building (right-click to open)
                     if self.shop and self.shop.collision_rect.collidepoint(event.pos):
                         self.shop_ui.open(self.player, self.inventory)
@@ -1304,6 +1519,10 @@ class GameManager:
                             self.chest.toggle_inventory()
                             continue
                     
+                    # Try feeding animals if holding wheat
+                    if self._try_feed_animal(event.pos):
+                        continue
+
                     # Try to harvest a grown plant
                     self._harvest_plant(event.pos)
             
@@ -1378,6 +1597,13 @@ class GameManager:
             # Update stones (for shake animation)
             for stone in self.stones:
                 stone.update()
+            
+            # Update animals
+            obstacles = self._get_obstacles()
+            for chicken in self.chickens:
+                chicken.update(dt, obstacles)
+            for cow in self.cows:
+                cow.update(dt, obstacles)
             
             # Update grid (plant growth)
             self.grid.update(time.time())
@@ -1489,6 +1715,12 @@ class GameManager:
             
             # Draw grid (ground layer)
             self.grid.draw(self.screen, time.time())
+            
+            # Draw fenced areas (ground decoration before objects)
+            if self.chicken_coop:
+                self.chicken_coop.draw(self.screen)
+            if self.cow_pasture:
+                self.cow_pasture.draw(self.screen)
         else:
             # Dark Side background - very dark and atmospheric
             self.screen.fill(DARK_SIDE_BG)
@@ -1529,6 +1761,13 @@ class GameManager:
             
             for stone in self.stones:
                 render_list.append(('stone', stone.sort_y, stone))
+            
+            # Add animals
+            for chicken in self.chickens:
+                render_list.append(('chicken', chicken.sort_y, chicken))
+            
+            for cow in self.cows:
+                render_list.append(('cow', cow.sort_y, cow))
             
             if self.house:
                 render_list.append(('house', self.house.sort_y, self.house))
