@@ -60,7 +60,11 @@ class GameState:
 class GameManager:
     """Manages the main game state and logic with Y-sorting for depth"""
     
-    def __init__(self, screen: pygame.Surface, username: str, shirt_color: tuple = (70, 130, 180), save_id: Optional[int] = None):
+    def __init__(self, screen: pygame.Surface, username: str, 
+                 hat_color: tuple = (210, 180, 140),
+                 shirt_color: tuple = (70, 130, 180), 
+                 pants_color: tuple = (85, 85, 85),
+                 save_id: Optional[int] = None):
         self.screen = screen
         self.username = username
         self.clock = pygame.time.Clock()
@@ -72,7 +76,9 @@ class GameManager:
         self.farmer = Farmer(
             x=GRID_OFFSET_X + GRID_COLS * GRID_SIZE // 2 - 18,
             y=GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE // 2 - 20,
-            shirt_color=shirt_color
+            shirt_color=shirt_color,
+            hat_color=hat_color,
+            pants_color=pants_color
         )
         self.player = Player(self.farmer)
         self.ui = GameUI(username)
@@ -758,7 +764,9 @@ class GameManager:
                 "x": self.farmer.x,
                 "y": self.farmer.y,
                 "direction": self.farmer.direction,
-                "shirt_color": self.farmer.shirt_color
+                "hat_color": self.farmer.hat_color,
+                "shirt_color": self.farmer.shirt_color,
+                "pants_color": self.farmer.pants_color
             },
             "player": {
                 "level": self.player.level,
@@ -828,12 +836,35 @@ class GameManager:
             self.farmer.x = farmer_data.get("x", self.farmer.x)
             self.farmer.y = farmer_data.get("y", self.farmer.y)
             self.farmer.direction = farmer_data.get("direction", self.farmer.direction)
+            
+            # Load hat color
+            hat_color = farmer_data.get("hat_color")
+            if hat_color and isinstance(hat_color, (list, tuple)) and len(hat_color) == 3:
+                valid_color = all(isinstance(c, (int, float)) and 0 <= c <= 255 for c in hat_color)
+                if valid_color:
+                    self.farmer.hat_color = tuple(int(c) for c in hat_color)
+            
+            # Load shirt color
             shirt_color = farmer_data.get("shirt_color")
             if shirt_color and isinstance(shirt_color, (list, tuple)) and len(shirt_color) == 3:
-                # Validate each color component is in valid range 0-255
                 valid_color = all(isinstance(c, (int, float)) and 0 <= c <= 255 for c in shirt_color)
                 if valid_color:
                     self.farmer.shirt_color = tuple(int(c) for c in shirt_color)
+                    # Update shadow color
+                    self.farmer.shirt_shadow = (max(0, self.farmer.shirt_color[0]-30), 
+                                                max(0, self.farmer.shirt_color[1]-30), 
+                                                max(0, self.farmer.shirt_color[2]-30))
+            
+            # Load pants color
+            pants_color = farmer_data.get("pants_color")
+            if pants_color and isinstance(pants_color, (list, tuple)) and len(pants_color) == 3:
+                valid_color = all(isinstance(c, (int, float)) and 0 <= c <= 255 for c in pants_color)
+                if valid_color:
+                    self.farmer.pants_color = tuple(int(c) for c in pants_color)
+                    # Update shadow color
+                    self.farmer.pants_shadow = (max(0, self.farmer.pants_color[0]-25), 
+                                                max(0, self.farmer.pants_color[1]-25), 
+                                                max(0, self.farmer.pants_color[2]-25))
         
         # Load player level and XP
         player_data = data.get("player", {})

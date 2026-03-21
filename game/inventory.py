@@ -543,25 +543,21 @@ class Tool:
         return surface
     
     def draw_in_hand(self, screen: pygame.Surface, x: int, y: int, 
-                     direction: str, shake_angle: float = 0):
-        """Draw the tool as if held by the farmer"""
+                     direction: str, tool_angle: float = 0):
+        """Draw the tool as if held by the farmer at the specified angle"""
         import math
         
-        # Base position (farmer's hand position)
-        hand_x = x
-        hand_y = y
-        
-        # Apply shake rotation
-        angle = shake_angle
+        # The tool_angle is now the absolute angle the tool should be drawn at
+        # 0 degrees = pointing right, 90 = down, 180 = left, -90 = up
         
         if self.tool_type in [ToolType.SWORD, ToolType.IRON_SWORD, ToolType.GOLDEN_SWORD, ToolType.DIAMOND_SWORD]:
-            self._draw_sword(screen, hand_x, hand_y, direction, angle)
+            self._draw_sword_new(screen, x, y, tool_angle)
         elif self.tool_type == ToolType.HOE:
-            self._draw_hoe(screen, hand_x, hand_y, direction, angle)
+            self._draw_hoe_new(screen, x, y, tool_angle)
         elif self.tool_type == ToolType.AXE:
-            self._draw_axe(screen, hand_x, hand_y, direction, angle)
+            self._draw_axe_new(screen, x, y, tool_angle)
         elif self.tool_type == ToolType.HAMMER:
-            self._draw_hammer(screen, hand_x, hand_y, direction, angle)
+            self._draw_hammer_new(screen, x, y, tool_angle)
     
     def _draw_sword(self, screen, x, y, direction, angle):
         import math
@@ -746,6 +742,179 @@ class Tool:
         # Faces
         pygame.draw.circle(screen, (180, 180, 190), (head_x1, head_y1), 3)
         pygame.draw.circle(screen, (180, 180, 190), (head_x2, head_y2), 3)
+    
+    def _draw_sword_new(self, screen, x, y, angle):
+        """Draw sword with absolute angle - more realistic"""
+        import math
+        
+        # Get sword colors based on type
+        if self.tool_type == ToolType.SWORD:
+            blade_color = (180, 140, 100)  # Wooden
+            blade_edge = (200, 160, 120)
+            guard_color = (100, 80, 50)
+            handle_color = (139, 69, 19)
+        elif self.tool_type == ToolType.IRON_SWORD:
+            blade_color = (200, 200, 210)  # Iron gray
+            blade_edge = (240, 240, 250)
+            guard_color = (180, 180, 180)
+            handle_color = (80, 60, 40)
+        elif self.tool_type == ToolType.GOLDEN_SWORD:
+            blade_color = (255, 200, 50)  # Golden
+            blade_edge = (255, 240, 150)
+            guard_color = (255, 215, 0)
+            handle_color = (139, 69, 19)
+        elif self.tool_type == ToolType.DIAMOND_SWORD:
+            blade_color = (150, 220, 255)  # Diamond blue
+            blade_edge = (200, 240, 255)
+            guard_color = (100, 200, 255)
+            handle_color = (60, 50, 40)
+        else:
+            blade_color = (180, 180, 200)
+            blade_edge = (220, 220, 240)
+            guard_color = (160, 140, 100)
+            handle_color = (139, 69, 19)
+        
+        rad = math.radians(angle)
+        
+        # Handle (held part) - extends behind hand
+        handle_length = 10
+        handle_end_x = x - int(math.cos(rad) * handle_length)
+        handle_end_y = y - int(math.sin(rad) * handle_length)
+        pygame.draw.line(screen, handle_color, (x, y), (handle_end_x, handle_end_y), 5)
+        
+        # Handle wrap details
+        for i in range(3):
+            wrap_dist = 3 + i * 3
+            wrap_x = x - int(math.cos(rad) * wrap_dist)
+            wrap_y = y - int(math.sin(rad) * wrap_dist)
+            pygame.draw.circle(screen, (100, 60, 30), (wrap_x, wrap_y), 3)
+        
+        # Pommel
+        pygame.draw.circle(screen, guard_color, (handle_end_x, handle_end_y), 4)
+        
+        # Guard (cross guard) - perpendicular to blade
+        perp_angle = rad + math.pi / 2
+        guard_x1 = x + int(math.cos(perp_angle) * 10)
+        guard_y1 = y + int(math.sin(perp_angle) * 10)
+        guard_x2 = x - int(math.cos(perp_angle) * 10)
+        guard_y2 = y - int(math.sin(perp_angle) * 10)
+        pygame.draw.line(screen, guard_color, (guard_x1, guard_y1), (guard_x2, guard_y2), 5)
+        pygame.draw.circle(screen, guard_color, (guard_x1, guard_y1), 3)
+        pygame.draw.circle(screen, guard_color, (guard_x2, guard_y2), 3)
+        
+        # Blade - extends from guard
+        blade_length = 28
+        blade_start_x = x + int(math.cos(rad) * 3)
+        blade_start_y = y + int(math.sin(rad) * 3)
+        blade_end_x = blade_start_x + int(math.cos(rad) * blade_length)
+        blade_end_y = blade_start_y + int(math.sin(rad) * blade_length)
+        
+        # Main blade
+        pygame.draw.line(screen, blade_color, (blade_start_x, blade_start_y), 
+                        (blade_end_x, blade_end_y), 5)
+        
+        # Blade edge (brighter)
+        edge_offset_x = int(math.cos(perp_angle) * 1.5)
+        edge_offset_y = int(math.sin(perp_angle) * 1.5)
+        pygame.draw.line(screen, blade_edge, 
+                        (blade_start_x + edge_offset_x, blade_start_y + edge_offset_y),
+                        (blade_end_x + edge_offset_x, blade_end_y + edge_offset_y), 2)
+        
+        # Blade tip
+        pygame.draw.circle(screen, blade_edge, (blade_end_x, blade_end_y), 3)
+    
+    def _draw_hoe_new(self, screen, x, y, angle):
+        """Draw hoe with absolute angle"""
+        import math
+        
+        rad = math.radians(angle)
+        perp_angle = rad + math.pi / 2
+        
+        # Handle
+        handle_length = 22
+        handle_end_x = x - int(math.cos(rad) * handle_length)
+        handle_end_y = y - int(math.sin(rad) * handle_length)
+        pygame.draw.line(screen, (160, 82, 45), (x, y), (handle_end_x, handle_end_y), 4)
+        
+        # Metal blade head - perpendicular to handle at the end
+        head_x = x + int(math.cos(rad) * 4)
+        head_y = y + int(math.sin(rad) * 4)
+        
+        blade_width = 12
+        blade_x1 = head_x + int(math.cos(perp_angle) * blade_width)
+        blade_y1 = head_y + int(math.sin(perp_angle) * blade_width)
+        blade_x2 = head_x - int(math.cos(perp_angle) * blade_width)
+        blade_y2 = head_y - int(math.sin(perp_angle) * blade_width)
+        
+        # Draw blade
+        pygame.draw.polygon(screen, (120, 120, 130), [
+            (head_x, head_y), (blade_x1, blade_y1), (blade_x2, blade_y2)
+        ])
+        # Blade edge
+        pygame.draw.line(screen, (200, 200, 200), (blade_x1, blade_y1), (blade_x2, blade_y2), 2)
+    
+    def _draw_axe_new(self, screen, x, y, angle):
+        """Draw axe with absolute angle"""
+        import math
+        
+        rad = math.radians(angle)
+        perp_angle = rad + math.pi / 2
+        
+        # Handle
+        handle_length = 20
+        handle_end_x = x - int(math.cos(rad) * handle_length)
+        handle_end_y = y - int(math.sin(rad) * handle_length)
+        pygame.draw.line(screen, (160, 82, 45), (x, y), (handle_end_x, handle_end_y), 5)
+        
+        # Axe head at the front
+        head_x = x + int(math.cos(rad) * 5)
+        head_y = y + int(math.sin(rad) * 5)
+        
+        # Axe head extends perpendicular
+        back_x = head_x + int(math.cos(perp_angle) * 4)
+        back_y = head_y + int(math.sin(perp_angle) * 4)
+        blade_x = head_x - int(math.cos(perp_angle) * 10)
+        blade_y = head_y - int(math.sin(perp_angle) * 10)
+        
+        # Draw axe head
+        pygame.draw.polygon(screen, (140, 140, 150), [
+            (back_x - 3, back_y - 3), (back_x + 3, back_y + 3),
+            (blade_x + 2, blade_y + 2), (blade_x - 2, blade_y - 2)
+        ])
+        # Blade edge
+        pygame.draw.line(screen, (220, 220, 220), 
+                        (blade_x - 2, blade_y - 2), (blade_x + 2, blade_y + 2), 3)
+    
+    def _draw_hammer_new(self, screen, x, y, angle):
+        """Draw hammer with absolute angle"""
+        import math
+        
+        rad = math.radians(angle)
+        perp_angle = rad + math.pi / 2
+        
+        # Handle
+        handle_length = 16
+        handle_end_x = x - int(math.cos(rad) * handle_length)
+        handle_end_y = y - int(math.sin(rad) * handle_length)
+        pygame.draw.line(screen, (160, 82, 45), (x, y), (handle_end_x, handle_end_y), 5)
+        
+        # Hammer head at front
+        head_x = x + int(math.cos(rad) * 4)
+        head_y = y + int(math.sin(rad) * 4)
+        
+        # Head extends perpendicular
+        head_width = 10
+        head_x1 = head_x + int(math.cos(perp_angle) * head_width)
+        head_y1 = head_y + int(math.sin(perp_angle) * head_width)
+        head_x2 = head_x - int(math.cos(perp_angle) * head_width)
+        head_y2 = head_y - int(math.sin(perp_angle) * head_width)
+        
+        # Draw head
+        pygame.draw.line(screen, (80, 80, 90), 
+                        (head_x1, head_y1), (head_x2, head_y2), 8)
+        # Faces
+        pygame.draw.circle(screen, (180, 180, 190), (head_x1, head_y1), 4)
+        pygame.draw.circle(screen, (180, 180, 190), (head_x2, head_y2), 4)
 
 
 class Inventory:

@@ -109,9 +109,9 @@ class TextInput:
 
 
 class Menu:
-    """Main menu screen"""
+    """Main menu screen with character design"""
     
-    def __init__(self, on_start_game: Callable[[str, tuple, Optional[int]], None]):
+    def __init__(self, on_start_game: Callable[[str, tuple, tuple, tuple, Optional[int]], None]):
         self.on_start_game = on_start_game
         
         # Fonts
@@ -119,45 +119,62 @@ class Menu:
         self.button_font = pygame.font.SysFont(FONT_NAME, MENU_BUTTON_SIZE)
         self.input_font = pygame.font.SysFont(FONT_NAME, MENU_BUTTON_SIZE)
         self.save_list_font = pygame.font.SysFont(FONT_NAME, 24)
+        self.label_font = pygame.font.SysFont(FONT_NAME, 24)
         
         # Title
         self.title_text = "Farm Life"
         
-        # Username input
-        input_width = 300
+        # Layout constants
+        self.left_panel_width = 500
+        self.left_panel_x = 100
+        self.right_panel_x = 700
+        self.panel_y_start = 250
+        
+        # Username input (left side)
+        input_width = 350
         input_height = 50
-        input_x = (SCREEN_WIDTH - input_width) // 2
-        input_y = SCREEN_HEIGHT // 2 - 120
+        input_x = self.left_panel_x + (self.left_panel_width - input_width) // 2
+        input_y = self.panel_y_start
         self.username_input = TextInput(input_x, input_y, input_width, input_height)
         
-        # Shirt color selection
-        self.shirt_colors = [
-            (70, 130, 180),  # Steel Blue
-            (180, 70, 70),   # Red
-            (70, 180, 70),   # Green
-            (180, 180, 70),  # Yellow
-            (180, 70, 180),  # Purple
-            (70, 180, 180)   # Cyan
+        # Color palettes for character design
+        self.color_palette = [
+            (70, 130, 180),   # Steel Blue
+            (180, 70, 70),    # Red
+            (70, 180, 70),    # Green
+            (180, 180, 70),   # Yellow
+            (180, 70, 180),   # Purple
+            (70, 180, 180),   # Cyan
+            (210, 180, 140),  # Tan
+            (85, 85, 85),     # Gray
+            (200, 120, 50),   # Orange
+            (150, 75, 0),     # Brown
+            (255, 192, 203),  # Pink
+            (50, 50, 50),     # Black
         ]
-        self.selected_color_idx = 0
-        self.color_swatches = []
-        swatch_size = 40
-        swatch_spacing = 15
-        total_swatches_width = len(self.shirt_colors) * swatch_size + (len(self.shirt_colors) - 1) * swatch_spacing
-        start_x = (SCREEN_WIDTH - total_swatches_width) // 2
-        swatch_y = SCREEN_HEIGHT // 2 + 60
         
-        for i, color in enumerate(self.shirt_colors):
-            rect = pygame.Rect(start_x + i * (swatch_size + swatch_spacing), swatch_y, swatch_size, swatch_size)
-            self.color_swatches.append(rect)
+        # Hat color selection
+        self.selected_hat_idx = 6  # Default tan
+        self.hat_swatches = []
+        
+        # Shirt color selection
+        self.selected_shirt_idx = 0  # Default steel blue
+        self.shirt_swatches = []
+        
+        # Pants color selection
+        self.selected_pants_idx = 7  # Default gray
+        self.pants_swatches = []
+        
+        # Create color swatches for each category
+        self._create_color_swatches()
 
-        # Start and load buttons
-        button_width = 200
-        button_height = 50
-        button_y = SCREEN_HEIGHT // 2 + 140
+        # Start and load buttons (left side, below username)
+        button_width = 160
+        button_height = 45
+        button_y = input_y + 100
         button_spacing = 20
-        total_button_width = button_width * 2 + button_spacing
-        button_x = (SCREEN_WIDTH - total_button_width) // 2
+        buttons_total_width = button_width * 2 + button_spacing
+        button_x = self.left_panel_x + (self.left_panel_width - buttons_total_width) // 2
         self.start_button = Button(
             button_x, button_y, button_width, button_height,
             "Start New Game", GREEN, DARK_GREEN
@@ -166,6 +183,11 @@ class Menu:
             button_x + button_width + button_spacing, button_y, button_width, button_height,
             "Load Game", (80, 120, 180), (100, 140, 200)
         )
+        
+        # Character preview position (left side of the right panel, next to color selectors)
+        self.preview_x = self.right_panel_x + 90
+        self.preview_y = 380
+        self.preview_scale = 1.8  # Smaller scale for the character
 
         # Saved games list
         self.saves: List[Dict[str, str]] = []
@@ -188,16 +210,70 @@ class Menu:
             "Press ESC to pause the game"
         ]
     
+    def _create_color_swatches(self):
+        """Create color swatch rectangles for hat, shirt, and pants - positioned to the right of character preview"""
+        swatch_size = 28
+        swatch_spacing = 6
+        swatches_per_row = 6
+        
+        # Color swatches start position (to the right of character preview)
+        start_x = self.right_panel_x + 200
+        
+        # Hat swatches - with space for label above
+        hat_y = 290  # Adjusted for label space
+        for i, color in enumerate(self.color_palette):
+            row = i // swatches_per_row
+            col = i % swatches_per_row
+            x = start_x + col * (swatch_size + swatch_spacing)
+            y = hat_y + row * (swatch_size + swatch_spacing)
+            self.hat_swatches.append(pygame.Rect(x, y, swatch_size, swatch_size))
+        
+        # Shirt swatches - with space for label above
+        shirt_y = 390  # Adjusted for label space
+        for i, color in enumerate(self.color_palette):
+            row = i // swatches_per_row
+            col = i % swatches_per_row
+            x = start_x + col * (swatch_size + swatch_spacing)
+            y = shirt_y + row * (swatch_size + swatch_spacing)
+            self.shirt_swatches.append(pygame.Rect(x, y, swatch_size, swatch_size))
+        
+        # Pants swatches - with space for label above
+        pants_y = 490  # Adjusted for label space
+        for i, color in enumerate(self.color_palette):
+            row = i // swatches_per_row
+            col = i % swatches_per_row
+            x = start_x + col * (swatch_size + swatch_spacing)
+            y = pants_y + row * (swatch_size + swatch_spacing)
+            self.pants_swatches.append(pygame.Rect(x, y, swatch_size, swatch_size))
+    
+    def _get_selected_colors(self) -> tuple:
+        """Get the currently selected hat, shirt, and pants colors"""
+        hat_color = self.color_palette[self.selected_hat_idx]
+        shirt_color = self.color_palette[self.selected_shirt_idx]
+        pants_color = self.color_palette[self.selected_pants_idx]
+        return hat_color, shirt_color, pants_color
+    
     def handle_event(self, event: pygame.event.Event):
         """Handle menu events"""
         self.username_input.handle_event(event)
         
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                for i, rect in enumerate(self.color_swatches):
+                # Check hat color swatches
+                for i, rect in enumerate(self.hat_swatches):
                     if rect.collidepoint(event.pos):
-                        self.selected_color_idx = i
-                        break
+                        self.selected_hat_idx = i
+                        return
+                # Check shirt color swatches
+                for i, rect in enumerate(self.shirt_swatches):
+                    if rect.collidepoint(event.pos):
+                        self.selected_shirt_idx = i
+                        return
+                # Check pants color swatches
+                for i, rect in enumerate(self.pants_swatches):
+                    if rect.collidepoint(event.pos):
+                        self.selected_pants_idx = i
+                        return
         
         # Önce silme onay penceresini kontrol et ki,
         # üstteki dialog, alttaki load panel yerine tıklamaları yakalasın.
@@ -212,7 +288,8 @@ class Menu:
         if self.start_button.handle_event(event):
             username = self.username_input.get_text().strip()
             if username:
-                self.on_start_game(username, self.shirt_colors[self.selected_color_idx], None)
+                hat_color, shirt_color, pants_color = self._get_selected_colors()
+                self.on_start_game(username, hat_color, shirt_color, pants_color, None)
 
         if self.load_button.handle_event(event):
             self._refresh_save_list()
@@ -245,9 +322,11 @@ class Menu:
                 if self.selected_save_index is not None:
                     save = self.saves[self.selected_save_index]
                     username = save.get("name") or self.username_input.get_text().strip()
-                    shirt_color = save.get("shirt_color", self.shirt_colors[self.selected_color_idx])
+                    hat_color = save.get("hat_color", self.color_palette[self.selected_hat_idx])
+                    shirt_color = save.get("shirt_color", self.color_palette[self.selected_shirt_idx])
+                    pants_color = save.get("pants_color", self.color_palette[self.selected_pants_idx])
                     if username:
-                        self.on_start_game(username, tuple(shirt_color), save.get("id"))
+                        self.on_start_game(username, tuple(hat_color), tuple(shirt_color), tuple(pants_color), save.get("id"))
                 return
             
             # Check save item clicks
@@ -370,46 +449,63 @@ class Menu:
         
         # Draw title with shadow
         title_shadow = self.title_font.render(self.title_text, True, (0, 50, 0))
-        shadow_rect = title_shadow.get_rect(center=(SCREEN_WIDTH // 2 + 3, 120 + 3))
+        shadow_rect = title_shadow.get_rect(center=(SCREEN_WIDTH // 2 + 3, 80 + 3))
         screen.blit(title_shadow, shadow_rect)
         
         title_surface = self.title_font.render(self.title_text, True, YELLOW)
-        title_rect = title_surface.get_rect(center=(SCREEN_WIDTH // 2, 120))
+        title_rect = title_surface.get_rect(center=(SCREEN_WIDTH // 2, 80))
         screen.blit(title_surface, title_rect)
         
         # Draw subtitle
         subtitle_font = pygame.font.SysFont(FONT_NAME, 28)
         subtitle = subtitle_font.render("A Grid-Based Farming Adventure", True, DARK_GREEN)
-        subtitle_rect = subtitle.get_rect(center=(SCREEN_WIDTH // 2, 180))
+        subtitle_rect = subtitle.get_rect(center=(SCREEN_WIDTH // 2, 140))
         screen.blit(subtitle, subtitle_rect)
         
+        # === LEFT PANEL: Username and Buttons ===
         # Draw username label
-        label_font = pygame.font.SysFont(FONT_NAME, 24)
-        label = label_font.render("Enter your name:", True, BLACK)
-        label_rect = label.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 130))
+        label = self.label_font.render("Enter your name:", True, BLACK)
+        label_rect = label.get_rect(center=(self.left_panel_x + self.left_panel_width // 2, self.panel_y_start - 30))
         screen.blit(label, label_rect)
         
-        # Draw color selection label
-        color_label = label_font.render("Select Shirt Color:", True, BLACK)
-        color_label_rect = color_label.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30))
-        screen.blit(color_label, color_label_rect)
-
-        # Draw swatches
-        for i, rect in enumerate(self.color_swatches):
-            pygame.draw.rect(screen, self.shirt_colors[i], rect, border_radius=5)
-            if i == self.selected_color_idx:
-                pygame.draw.rect(screen, WHITE, rect, 3, border_radius=5)
-            else:
-                pygame.draw.rect(screen, BLACK, rect, 1, border_radius=5)
-
         # Draw input and buttons
         self.username_input.draw(screen, self.input_font)
         self.start_button.draw(screen, self.button_font)
         self.load_button.draw(screen, self.button_font)
         
+        # === RIGHT PANEL: Character Design ===
+        # Draw panel background
+        panel_rect = pygame.Rect(self.right_panel_x, 220, 520, 520)
+        pygame.draw.rect(screen, (255, 255, 255, 180), panel_rect, border_radius=15)
+        pygame.draw.rect(screen, (100, 100, 100), panel_rect, 3, border_radius=15)
+        
+        # Draw "Character Design" header
+        design_title = self.label_font.render("Character Design", True, BLACK)
+        design_title_rect = design_title.get_rect(center=(self.right_panel_x + 260, 250))
+        screen.blit(design_title, design_title_rect)
+        
+        # Draw character preview (left side)
+        self._draw_character_preview(screen)
+        
+        # Draw color selection labels and swatches (right side of preview)
+        # Hat colors
+        hat_label = self.label_font.render("Hat Color:", True, BLACK)
+        screen.blit(hat_label, (self.right_panel_x + 200, 268))
+        self._draw_color_swatches(screen, self.hat_swatches, self.selected_hat_idx)
+        
+        # Shirt colors
+        shirt_label = self.label_font.render("Shirt Color:", True, BLACK)
+        screen.blit(shirt_label, (self.right_panel_x + 200, 368))
+        self._draw_color_swatches(screen, self.shirt_swatches, self.selected_shirt_idx)
+        
+        # Pants colors
+        pants_label = self.label_font.render("Pants Color:", True, BLACK)
+        screen.blit(pants_label, (self.right_panel_x + 200, 468))
+        self._draw_color_swatches(screen, self.pants_swatches, self.selected_pants_idx)
+        
         # Draw instructions
         instruction_font = pygame.font.SysFont(FONT_NAME, 20)
-        y_start = SCREEN_HEIGHT - 100
+        y_start = SCREEN_HEIGHT - 80
         for i, instruction in enumerate(self.instructions):
             inst_surface = instruction_font.render(instruction, True, BLACK)
             inst_rect = inst_surface.get_rect(center=(SCREEN_WIDTH // 2, y_start + i * 25))
@@ -422,6 +518,243 @@ class Menu:
         # Draw confirmation dialog if active
         if self.show_delete_confirm:
             self._draw_confirm_dialog(screen)
+    
+    def _draw_color_swatches(self, screen: pygame.Surface, swatches: list, selected_idx: int):
+        """Draw color swatches with selection indicator"""
+        for i, rect in enumerate(swatches):
+            color = self.color_palette[i]
+            pygame.draw.rect(screen, color, rect, border_radius=5)
+            if i == selected_idx:
+                pygame.draw.rect(screen, WHITE, rect, 3, border_radius=5)
+                pygame.draw.rect(screen, BLACK, rect, 1, border_radius=5)
+            else:
+                pygame.draw.rect(screen, BLACK, rect, 1, border_radius=5)
+    
+    def _draw_character_preview(self, screen: pygame.Surface):
+        """Draw a realistic preview of the character with selected colors"""
+        cx = self.preview_x
+        cy = self.preview_y
+        scale = self.preview_scale
+        
+        hat_color = self.color_palette[self.selected_hat_idx]
+        shirt_color = self.color_palette[self.selected_shirt_idx]
+        pants_color = self.color_palette[self.selected_pants_idx]
+        
+        # Calculate shadow colors
+        shirt_shadow = (max(0, shirt_color[0]-35), max(0, shirt_color[1]-35), max(0, shirt_color[2]-35))
+        pants_shadow = (max(0, pants_color[0]-25), max(0, pants_color[1]-25), max(0, pants_color[2]-25))
+        hat_shadow = (max(0, hat_color[0]-25), max(0, hat_color[1]-25), max(0, hat_color[2]-25))
+        
+        # Skin and other colors
+        skin_color = (255, 218, 185)
+        skin_shadow = (235, 190, 155)
+        skin_highlight = (255, 230, 200)
+        hair_color = (101, 67, 33)
+        hair_shadow = (80, 50, 25)
+        boots_color = (101, 67, 33)
+        boots_shadow = (70, 45, 20)
+        hat_band = (139, 69, 19)
+        
+        # Shadow under character
+        shadow_surf = pygame.Surface((60 * scale, 20 * scale), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow_surf, (0, 0, 0, 60), (0, 0, 60 * scale, 20 * scale))
+        screen.blit(shadow_surf, (cx - 30 * scale, cy + 95 * scale))
+        
+        # === BOOTS ===
+        boot_y = cy + 85 * scale
+        # Left boot
+        pygame.draw.ellipse(screen, boots_shadow, (cx - 16 * scale, boot_y + 2, 14 * scale, 10 * scale))
+        pygame.draw.ellipse(screen, boots_color, (cx - 17 * scale, boot_y, 14 * scale, 10 * scale))
+        # Right boot
+        pygame.draw.ellipse(screen, boots_shadow, (cx + 3 * scale, boot_y + 2, 14 * scale, 10 * scale))
+        pygame.draw.ellipse(screen, boots_color, (cx + 2 * scale, boot_y, 14 * scale, 10 * scale))
+        
+        # === LEGS/PANTS ===
+        pants_top = cy + 45 * scale
+        pants_bottom = boot_y + 2
+        
+        # Left leg - slightly bent pose
+        left_leg_points = [
+            (cx - 10 * scale, pants_top),
+            (cx - 14 * scale, pants_top + 20 * scale),
+            (cx - 12 * scale, pants_bottom),
+            (cx - 4 * scale, pants_bottom),
+            (cx - 2 * scale, pants_top + 20 * scale),
+            (cx - 4 * scale, pants_top),
+        ]
+        pygame.draw.polygon(screen, pants_shadow, [(p[0] + 2, p[1]) for p in left_leg_points])
+        pygame.draw.polygon(screen, pants_color, left_leg_points)
+        
+        # Right leg
+        right_leg_points = [
+            (cx + 4 * scale, pants_top),
+            (cx + 2 * scale, pants_top + 20 * scale),
+            (cx + 4 * scale, pants_bottom),
+            (cx + 12 * scale, pants_bottom),
+            (cx + 14 * scale, pants_top + 20 * scale),
+            (cx + 10 * scale, pants_top),
+        ]
+        pygame.draw.polygon(screen, pants_shadow, [(p[0] + 2, p[1]) for p in right_leg_points])
+        pygame.draw.polygon(screen, pants_color, right_leg_points)
+        
+        # === BODY/TORSO ===
+        body_top = cy - 5 * scale
+        
+        # Torso - more realistic shape
+        torso_points = [
+            (cx - 14 * scale, body_top + 5 * scale),  # left shoulder
+            (cx - 16 * scale, body_top + 25 * scale),  # left side
+            (cx - 12 * scale, body_top + 50 * scale),  # left hip
+            (cx + 12 * scale, body_top + 50 * scale),  # right hip
+            (cx + 16 * scale, body_top + 25 * scale),  # right side
+            (cx + 14 * scale, body_top + 5 * scale),   # right shoulder
+        ]
+        pygame.draw.polygon(screen, shirt_shadow, [(p[0] + 2, p[1] + 2) for p in torso_points])
+        pygame.draw.polygon(screen, shirt_color, torso_points)
+        
+        # Collar/V-neck
+        collar_points = [
+            (cx - 8 * scale, body_top),
+            (cx, body_top + 15 * scale),
+            (cx + 8 * scale, body_top),
+        ]
+        pygame.draw.polygon(screen, (220, 220, 220), collar_points)
+        pygame.draw.lines(screen, (180, 180, 180), False, [(cx - 8 * scale, body_top), (cx, body_top + 15 * scale), (cx + 8 * scale, body_top)], 2)
+        
+        # === ARMS ===
+        # Left arm
+        arm_left_start = (cx - 14 * scale, body_top + 8 * scale)
+        arm_left_elbow = (cx - 22 * scale, body_top + 30 * scale)
+        arm_left_end = (cx - 20 * scale, body_top + 50 * scale)
+        pygame.draw.line(screen, shirt_shadow, 
+                        (arm_left_start[0] + 2, arm_left_start[1]), 
+                        (arm_left_elbow[0] + 2, arm_left_elbow[1]), int(8 * scale))
+        pygame.draw.line(screen, shirt_color, arm_left_start, arm_left_elbow, int(7 * scale))
+        pygame.draw.line(screen, shirt_shadow,
+                        (arm_left_elbow[0] + 2, arm_left_elbow[1]),
+                        (arm_left_end[0] + 2, arm_left_end[1]), int(6 * scale))
+        pygame.draw.line(screen, shirt_color, arm_left_elbow, arm_left_end, int(5 * scale))
+        # Left hand
+        pygame.draw.circle(screen, skin_shadow, (int(arm_left_end[0]) + 1, int(arm_left_end[1]) + 1), int(5 * scale))
+        pygame.draw.circle(screen, skin_color, (int(arm_left_end[0]), int(arm_left_end[1])), int(5 * scale))
+        
+        # Right arm
+        arm_right_start = (cx + 14 * scale, body_top + 8 * scale)
+        arm_right_elbow = (cx + 22 * scale, body_top + 30 * scale)
+        arm_right_end = (cx + 20 * scale, body_top + 50 * scale)
+        pygame.draw.line(screen, shirt_shadow,
+                        (arm_right_start[0] + 2, arm_right_start[1]),
+                        (arm_right_elbow[0] + 2, arm_right_elbow[1]), int(8 * scale))
+        pygame.draw.line(screen, shirt_color, arm_right_start, arm_right_elbow, int(7 * scale))
+        pygame.draw.line(screen, shirt_shadow,
+                        (arm_right_elbow[0] + 2, arm_right_elbow[1]),
+                        (arm_right_end[0] + 2, arm_right_end[1]), int(6 * scale))
+        pygame.draw.line(screen, shirt_color, arm_right_elbow, arm_right_end, int(5 * scale))
+        # Right hand
+        pygame.draw.circle(screen, skin_shadow, (int(arm_right_end[0]) + 1, int(arm_right_end[1]) + 1), int(5 * scale))
+        pygame.draw.circle(screen, skin_color, (int(arm_right_end[0]), int(arm_right_end[1])), int(5 * scale))
+        
+        # === NECK ===
+        neck_rect = pygame.Rect(cx - 4 * scale, body_top - 8 * scale, 8 * scale, 10 * scale)
+        pygame.draw.rect(screen, skin_shadow, (neck_rect.x + 1, neck_rect.y + 1, neck_rect.width, neck_rect.height))
+        pygame.draw.rect(screen, skin_color, neck_rect)
+        
+        # === HEAD ===
+        head_y = body_top - 35 * scale
+        head_width = 28 * scale
+        head_height = 32 * scale
+        
+        # Head shape - more oval and realistic
+        pygame.draw.ellipse(screen, skin_shadow,
+                           (cx - head_width//2 + 2, head_y + 2, head_width, head_height))
+        pygame.draw.ellipse(screen, skin_color,
+                           (cx - head_width//2, head_y, head_width, head_height))
+        
+        # === HAIR ===
+        # Hair on top
+        hair_points = [
+            (cx - 12 * scale, head_y + 8 * scale),
+            (cx - 14 * scale, head_y - 2 * scale),
+            (cx - 8 * scale, head_y - 6 * scale),
+            (cx, head_y - 8 * scale),
+            (cx + 8 * scale, head_y - 6 * scale),
+            (cx + 14 * scale, head_y - 2 * scale),
+            (cx + 12 * scale, head_y + 8 * scale),
+        ]
+        pygame.draw.polygon(screen, hair_shadow, [(p[0] + 1, p[1] + 1) for p in hair_points])
+        pygame.draw.polygon(screen, hair_color, hair_points)
+        
+        # Side hair
+        pygame.draw.ellipse(screen, hair_color, (cx - 14 * scale, head_y + 5 * scale, 8 * scale, 15 * scale))
+        pygame.draw.ellipse(screen, hair_color, (cx + 6 * scale, head_y + 5 * scale, 8 * scale, 15 * scale))
+        
+        # === FACE ===
+        # Eyes - more detailed
+        eye_y = head_y + 12 * scale
+        # Left eye
+        pygame.draw.ellipse(screen, (255, 255, 255), (cx - 10 * scale, eye_y, 8 * scale, 6 * scale))
+        pygame.draw.circle(screen, (60, 40, 30), (int(cx - 6 * scale), int(eye_y + 3 * scale)), int(2.5 * scale))
+        pygame.draw.circle(screen, (255, 255, 255), (int(cx - 7 * scale), int(eye_y + 2 * scale)), int(1 * scale))
+        # Right eye
+        pygame.draw.ellipse(screen, (255, 255, 255), (cx + 2 * scale, eye_y, 8 * scale, 6 * scale))
+        pygame.draw.circle(screen, (60, 40, 30), (int(cx + 6 * scale), int(eye_y + 3 * scale)), int(2.5 * scale))
+        pygame.draw.circle(screen, (255, 255, 255), (int(cx + 5 * scale), int(eye_y + 2 * scale)), int(1 * scale))
+        
+        # Eyebrows
+        pygame.draw.line(screen, hair_color, 
+                        (cx - 11 * scale, eye_y - 3 * scale), 
+                        (cx - 4 * scale, eye_y - 4 * scale), 2)
+        pygame.draw.line(screen, hair_color, 
+                        (cx + 4 * scale, eye_y - 4 * scale), 
+                        (cx + 11 * scale, eye_y - 3 * scale), 2)
+        
+        # Nose
+        pygame.draw.line(screen, skin_shadow, 
+                        (cx, eye_y + 6 * scale), 
+                        (cx - 2 * scale, eye_y + 12 * scale), 2)
+        pygame.draw.line(screen, skin_shadow,
+                        (cx - 2 * scale, eye_y + 12 * scale),
+                        (cx + 2 * scale, eye_y + 12 * scale), 2)
+        
+        # Mouth
+        pygame.draw.arc(screen, (180, 100, 100),
+                       (cx - 5 * scale, eye_y + 14 * scale, 10 * scale, 5 * scale), 3.14, 6.28, 2)
+        
+        # Ears
+        pygame.draw.ellipse(screen, skin_shadow, (cx - 15 * scale, head_y + 10 * scale, 5 * scale, 8 * scale))
+        pygame.draw.ellipse(screen, skin_color, (cx - 16 * scale, head_y + 9 * scale, 5 * scale, 8 * scale))
+        pygame.draw.ellipse(screen, skin_shadow, (cx + 10 * scale, head_y + 10 * scale, 5 * scale, 8 * scale))
+        pygame.draw.ellipse(screen, skin_color, (cx + 11 * scale, head_y + 9 * scale, 5 * scale, 8 * scale))
+        
+        # === HAT ===
+        hat_base_y = head_y - 5 * scale
+        
+        # Hat brim - wider ellipse
+        pygame.draw.ellipse(screen, hat_shadow,
+                           (cx - 22 * scale, hat_base_y + 6 * scale, 44 * scale, 12 * scale))
+        pygame.draw.ellipse(screen, hat_color,
+                           (cx - 23 * scale, hat_base_y + 4 * scale, 44 * scale, 12 * scale))
+        
+        # Hat crown - rounded top
+        crown_points = [
+            (cx - 16 * scale, hat_base_y + 6 * scale),
+            (cx - 14 * scale, hat_base_y - 8 * scale),
+            (cx - 8 * scale, hat_base_y - 14 * scale),
+            (cx, hat_base_y - 16 * scale),
+            (cx + 8 * scale, hat_base_y - 14 * scale),
+            (cx + 14 * scale, hat_base_y - 8 * scale),
+            (cx + 16 * scale, hat_base_y + 6 * scale),
+        ]
+        pygame.draw.polygon(screen, hat_shadow, [(p[0] + 2, p[1] + 2) for p in crown_points])
+        pygame.draw.polygon(screen, hat_color, crown_points)
+        
+        # Hat band
+        pygame.draw.ellipse(screen, hat_band,
+                           (cx - 17 * scale, hat_base_y + 2 * scale, 34 * scale, 6 * scale))
+        
+        # Highlight on hat
+        pygame.draw.arc(screen, (min(255, hat_color[0] + 30), min(255, hat_color[1] + 30), min(255, hat_color[2] + 30)),
+                       (cx - 10 * scale, hat_base_y - 12 * scale, 16 * scale, 12 * scale), 0, 3.14, 2)
 
     def _draw_load_panel(self, screen: pygame.Surface):
         """Draw the load game panel overlay."""
@@ -579,13 +912,18 @@ class Menu:
         for index, row in enumerate(rows[:6]):
             save_id, name, created_at, updated_at, data = row
             payload = json.loads(data)
-            shirt_color = payload.get("entities", {}).get("farmer", {}).get("shirt_color", self.shirt_colors[0])
+            farmer_data = payload.get("entities", {}).get("farmer", {})
+            hat_color = farmer_data.get("hat_color", self.color_palette[6])  # Default tan
+            shirt_color = farmer_data.get("shirt_color", self.color_palette[0])  # Default steel blue
+            pants_color = farmer_data.get("pants_color", self.color_palette[7])  # Default gray
             self.saves.append({
                 "id": save_id,
                 "name": name,
                 "created_at": created_at,
                 "updated_at": updated_at,
-                "shirt_color": shirt_color
+                "hat_color": hat_color,
+                "shirt_color": shirt_color,
+                "pants_color": pants_color
             })
             button = Button(
                 start_x,
