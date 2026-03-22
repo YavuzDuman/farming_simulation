@@ -205,8 +205,19 @@ class Farmer:
         can_move = True
         if obstacles:
             for obstacle in obstacles:
+                # Check for collides_with method (used by some obstacles)
                 if hasattr(obstacle, 'collides_with'):
                     if obstacle.collides_with(test_rect):
+                        can_move = False
+                        break
+                # Check for collision_rect attribute (used by DarkRock, Stone, etc.)
+                elif hasattr(obstacle, 'collision_rect') and obstacle.collision_rect:
+                    if test_rect.colliderect(obstacle.collision_rect):
+                        can_move = False
+                        break
+                # Check for rect attribute as fallback
+                elif hasattr(obstacle, 'rect') and obstacle.rect:
+                    if test_rect.colliderect(obstacle.rect):
                         can_move = False
                         break
         

@@ -1,11 +1,119 @@
 import pygame
 import random
 import math
+import heapq
+from typing import List, Tuple, Optional
 from config import (
     GRID_SIZE, ZOMBIE_SPEED, ZOMBIE_SKIN, ZOMBIE_SKIN_DARK, 
     ZOMBIE_SKIN_LIGHT, ZOMBIE_CLOTHES, ZOMBIE_EYE, ZOMBIE_BLOOD,
     HEALTH_RED, HEALTH_BG
 )
+
+
+def a_star_pathfind(start: Tuple[float, float], goal: Tuple[float, float], 
+                    obstacles: List, grid_size: int = 50, 
+                    world_bounds: Tuple[int, int, int, int] = None) -> List[Tuple[float, float]]:
+    """
+    Optimized A* pathfinding algorithm using heapq.
+    Returns a list of waypoints (path) or empty list if no path found.
+    """
+    if not obstacles:
+        return [goal]
+    
+    # Convert to grid coordinates
+    def world_to_grid(pos):
+        return (int(pos[0] // grid_size), int(pos[1] // grid_size))
+    
+    def grid_to_world(pos):
+        return (pos[0] * grid_size + grid_size // 2, pos[1] * grid_size + grid_size // 2)
+    
+    # Build blocked cells set (cached per call)
+    blocked_cells = set()
+    for obs in obstacles:
+        rect = None
+        if hasattr(obs, 'collision_rect') and obs.collision_rect:
+            rect = obs.collision_rect
+        elif hasattr(obs, 'rect') and obs.rect:
+            rect = obs.rect
+        
+        if rect:
+            # Convert rect to grid cells (expanded for zombie size)
+            min_col = int((rect.left - 30) // grid_size)
+            max_col = int((rect.right + 30) // grid_size)
+            min_row = int((rect.top - 30) // grid_size)
+            max_row = int((rect.bottom + 30) // grid_size)
+            
+            for col in range(min_col, max_col + 1):
+                for row in range(min_row, max_row + 1):
+                    blocked_cells.add((col, row))
+    
+    def is_blocked(grid_pos):
+        return grid_pos in blocked_cells
+    
+    # Heuristic: Manhattan distance (faster than Euclidean)
+    def heuristic(a, b):
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+    
+    start_grid = world_to_grid(start)
+    goal_grid = world_to_grid(goal)
+    
+    # If start is blocked, find nearby open cell
+    if is_blocked(start_grid):
+        for dx in range(-3, 4):
+            for dy in range(-3, 4):
+                new_pos = (start_grid[0] + dx, start_grid[1] + dy)
+                if not is_blocked(new_pos):
+                    start_grid = new_pos
+                    break
+    
+    # If goal is blocked, find nearby open cell
+    if is_blocked(goal_grid):
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                new_pos = (goal_grid[0] + dx, goal_grid[1] + dy)
+                if not is_blocked(new_pos):
+                    goal_grid = new_pos
+                    break
+    
+    # A* algorithm with heapq
+    open_set = [(0, start_grid)]
+    came_from = {}
+    g_score = {start_grid: 0}
+    
+    max_iterations = 500  # Reduced for performance
+    iterations = 0
+    
+    while open_set and iterations < max_iterations:
+        iterations += 1
+        current_f, current = heapq.heappop(open_set)
+        
+        if current == goal_grid:
+            # Reconstruct path
+            path = []
+            while current in came_from:
+                path.append(grid_to_world(current))
+                current = came_from[current]
+            path.append(grid_to_world(start_grid))
+            path.reverse()
+            return path
+        
+        # Check neighbors (4-connected)
+        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            neighbor = (current[0] + dx, current[1] + dy)
+            
+            if is_blocked(neighbor):
+                continue
+            
+            tentative_g = g_score[current] + 1
+            
+            if neighbor not in g_score or tentative_g < g_score[neighbor]:
+                came_from[neighbor] = current
+                g_score[neighbor] = tentative_g
+                f_score = tentative_g + heuristic(neighbor, goal_grid)
+                heapq.heappush(open_set, (f_score, neighbor))
+    
+    # No path found, return direct path
+    return [goal]
 
 
 class Zombie:
@@ -50,6 +158,15 @@ class Zombie:
         self.height_offset = random.randint(-3, 3)
         self.walk_speed_variation = random.uniform(0.8, 1.2)
         
+        # A* Pathfinding
+        self.path = []  # List of waypoints
+        self.path_index = 0
+        self.path_recalc_timer = 0
+        self.path_recalc_interval = 2.0 + random.uniform(0, 1.0)  # Recalculate path every 2-3 seconds
+        self.stuck_timer = 0
+        self.last_position = (x, y)
+        self.stuck_threshold = 1.0  # Seconds without moving before considering stuck
+        
     @property
     def rect(self):
         return pygame.Rect(self.x - self.width // 2, self.y - self.height // 2, self.width, self.height)
@@ -82,11 +199,9 @@ class Zombie:
             self.knockback_x *= self.knockback_decay
             self.knockback_y *= self.knockback_decay
         
-        # Move towards player
+        # Move towards player using steering behaviors (seek + obstacle avoidance)
         px, py = player_pos
-        dx = px - self.x
-        dy = py - self.y
-        dist = math.sqrt(dx**2 + dy**2)
+        dist = math.sqrt((px - self.x)**2 + (py - self.y)**2)
         
         # Update walk animation
         self.walk_timer += dt
@@ -95,26 +210,131 @@ class Zombie:
             self.walk_frame = (self.walk_frame + 1) % 4
         self.arm_swing = math.sin(self.walk_timer * 20) * 5
         
-        if dist > 0 and not self.is_hit:  # Don't move while being hit
+        if dist > 30 and not self.is_hit:  # Don't move if close to player or being hit
             speed = self.speed * self.walk_speed_variation
-            vx = (dx / dist) * speed
-            vy = (dy / dist) * speed
             
-            new_x = self.x + vx
-            new_y = self.y + vy
+            # Calculate desired direction towards player (seek behavior)
+            dx = px - self.x
+            dy = py - self.y
+            if dist > 0:
+                desired_vx = (dx / dist) * speed
+                desired_vy = (dy / dist) * speed
+            else:
+                desired_vx = 0
+                desired_vy = 0
             
-            # Simple collision check with obstacles
+            # Obstacle avoidance - check for obstacles in movement direction
+            avoidance_vx = 0
+            avoidance_vy = 0
+            
+            if obstacles:
+                # Check ahead and to sides for obstacles
+                ahead_dist = 50  # Look ahead distance
+                ahead_x = self.x + (dx / dist) * ahead_dist if dist > 0 else self.x
+                ahead_y = self.y + (dy / dist) * ahead_dist if dist > 0 else self.y
+                
+                # Check multiple points around the zombie
+                check_points = [
+                    (ahead_x, ahead_y),  # Ahead
+                    (ahead_x + 20, ahead_y),  # Ahead right
+                    (ahead_x - 20, ahead_y),  # Ahead left
+                    (self.x + 30, self.y),  # Right
+                    (self.x - 30, self.y),  # Left
+                    (self.x, self.y - 30),  # Up
+                    (self.x, self.y + 30),  # Down
+                ]
+                
+                for check_x, check_y in check_points:
+                    check_rect = pygame.Rect(check_x - 15, check_y - 15, 30, 30)
+                    for obs in obstacles:
+                        obs_rect = None
+                        if hasattr(obs, 'collision_rect') and obs.collision_rect:
+                            obs_rect = obs.collision_rect
+                        elif hasattr(obs, 'rect') and obs.rect:
+                            obs_rect = obs.rect
+                        
+                        if obs_rect and check_rect.colliderect(obs_rect):
+                            # Calculate avoidance direction (away from obstacle center)
+                            obs_center_x = obs_rect.centerx
+                            obs_center_y = obs_rect.centery
+                            avoid_dx = self.x - obs_center_x
+                            avoid_dy = self.y - obs_center_y
+                            avoid_dist = math.sqrt(avoid_dx**2 + avoid_dy**2)
+                            if avoid_dist > 0:
+                                avoidance_vx += (avoid_dx / avoid_dist) * speed * 1.5
+                                avoidance_vy += (avoid_dy / avoid_dist) * speed * 1.5
+                            break
+            
+            # Combine seek and avoidance
+            final_vx = desired_vx + avoidance_vx
+            final_vy = desired_vy + avoidance_vy
+            
+            # Normalize if too fast
+            final_speed = math.sqrt(final_vx**2 + final_vy**2)
+            if final_speed > speed:
+                final_vx = (final_vx / final_speed) * speed
+                final_vy = (final_vy / final_speed) * speed
+            
+            # Try to move
+            new_x = self.x + final_vx
+            new_y = self.y + final_vy
+            
+            # Collision check
             can_move = True
             if obstacles:
                 z_rect = pygame.Rect(new_x - self.width // 2, new_y - self.height // 2, self.width, self.height)
                 for obs in obstacles:
-                    if hasattr(obs, 'collision_rect') and z_rect.colliderect(obs.collision_rect):
+                    obs_rect = None
+                    if hasattr(obs, 'collision_rect') and obs.collision_rect:
+                        obs_rect = obs.collision_rect
+                    elif hasattr(obs, 'rect') and obs.rect:
+                        obs_rect = obs.rect
+                    
+                    if obs_rect and z_rect.colliderect(obs_rect):
                         can_move = False
                         break
             
             if can_move:
                 self.x = new_x
                 self.y = new_y
+            else:
+                # If blocked, try to slide along obstacle
+                # Try X movement only
+                test_rect_x = pygame.Rect(new_x - self.width // 2, self.y - self.height // 2, self.width, self.height)
+                can_move_x = True
+                for obs in obstacles:
+                    obs_rect = None
+                    if hasattr(obs, 'collision_rect') and obs.collision_rect:
+                        obs_rect = obs.collision_rect
+                    elif hasattr(obs, 'rect') and obs.rect:
+                        obs_rect = obs.rect
+                    if obs_rect and test_rect_x.colliderect(obs_rect):
+                        can_move_x = False
+                        break
+                
+                if can_move_x:
+                    self.x = new_x
+                else:
+                    # Try Y movement only
+                    test_rect_y = pygame.Rect(self.x - self.width // 2, new_y - self.height // 2, self.width, self.height)
+                    can_move_y = True
+                    for obs in obstacles:
+                        obs_rect = None
+                        if hasattr(obs, 'collision_rect') and obs.collision_rect:
+                            obs_rect = obs.collision_rect
+                        elif hasattr(obs, 'rect') and obs.rect:
+                            obs_rect = obs.rect
+                        if obs_rect and test_rect_y.colliderect(obs_rect):
+                            can_move_y = False
+                            break
+                    
+                    if can_move_y:
+                        self.y = new_y
+                    else:
+                        # Completely blocked, try random direction
+                        angle = random.uniform(0, 2 * math.pi)
+                        self.x += math.cos(angle) * speed
+                        self.y += math.sin(angle) * speed
     
     def take_damage(self, damage, attacker_x, attacker_y):
         """Take damage from an attack. Returns True if zombie died."""

@@ -95,3 +95,6 @@ SEED_GROWTH_TIMES = {
     'strawberry': 40,   # Strawberries
     'golden_wheat': 60  # Golden wheat (rare)
 }
+
+# Grass reset time - tilled grass reverts to green after this many seconds of inactivity
+GRASS_RESET_TIME = 30.0  # seconds

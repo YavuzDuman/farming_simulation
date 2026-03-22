@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     GRID_SIZE, GRID_COLS, GRID_ROWS, GRID_OFFSET_X, GRID_OFFSET_Y,
     GREEN, LIGHT_GREEN, DARK_GREEN, BROWN, LIGHT_BROWN, DARK_BROWN,
-    SEED_GROWTH_TIMES
+    SEED_GROWTH_TIMES, GRASS_RESET_TIME
 )
 
 
@@ -74,6 +74,8 @@ class GridCell:
         self.grass_blades = self._generate_grass_blades()
         # Random soil variation for texture
         self.soil_variation = self._generate_soil_texture()
+        # Track last interaction time for grass reset (30s to revert tilled to green)
+        self.last_interaction_time = 0.0
     
     @classmethod
     def _get_timer_font(cls):
@@ -142,6 +144,27 @@ class GridCell:
         else:
             return self.get_base_color()
     
+    def record_interaction(self):
+        """Record that the cell was interacted with (resets grass reset timer)"""
+        self.last_interaction_time = time.time()
+    
+    def check_grass_reset(self, current_time: float):
+        """Check if tilled grass should reset to green after 30 seconds of inactivity"""
+        if not self.is_tilled:
+            return
+        if self.plant_state != PlantState.EMPTY:
+            return
+        # Check if any drops are on the ground
+        if (self.has_wheat_dropped or self.has_carrot_dropped or self.has_tomato_dropped or
+            self.has_pumpkin_dropped or self.has_strawberry_dropped or self.has_golden_wheat_dropped or
+            self.has_seed_dropped or self.has_carrot_seed_dropped):
+            return
+        # Check if 30 seconds passed since last interaction
+        if current_time - self.last_interaction_time >= GRASS_RESET_TIME:
+            self.is_tilled = False
+            self.is_selected = False
+            self.is_hovered = False
+    
     def update_plant(self, current_time: float):
         """Update plant growth based on time"""
         if self.plant_state == PlantState.SEED:
@@ -196,6 +219,7 @@ class GridCell:
         """Harvest the grown plant. Returns harvest quantity."""
         if self.plant_state == PlantState.GROWN:
             self.plant_state = PlantState.EMPTY
+            self.record_interaction()  # Reset grass timer when harvesting
             harvest_qty = random.randint(2, 4)
             if self.plant_type == PlantType.CARROT:
                 self.has_carrot_dropped = True
@@ -230,6 +254,7 @@ class GridCell:
             qty = self.wheat_quantity
             self.has_wheat_dropped = False
             self.wheat_quantity = 0
+            self.record_interaction()  # Reset grass timer when collecting
             return qty
         return 0
 
@@ -239,6 +264,7 @@ class GridCell:
             qty = self.carrot_quantity
             self.has_carrot_dropped = False
             self.carrot_quantity = 0
+            self.record_interaction()  # Reset grass timer when collecting
             return qty
         return 0
 
@@ -248,6 +274,7 @@ class GridCell:
             qty = self.seed_quantity
             self.has_seed_dropped = False
             self.seed_quantity = 0
+            self.record_interaction()  # Reset grass timer when collecting
             return qty
         return 0
 
@@ -257,6 +284,7 @@ class GridCell:
             qty = self.carrot_seed_quantity
             self.has_carrot_seed_dropped = False
             self.carrot_seed_quantity = 0
+            self.record_interaction()  # Reset grass timer when collecting
             return qty
         return 0
     
@@ -266,6 +294,7 @@ class GridCell:
             qty = self.tomato_quantity
             self.has_tomato_dropped = False
             self.tomato_quantity = 0
+            self.record_interaction()  # Reset grass timer when collecting
             return qty
         return 0
     
@@ -275,6 +304,7 @@ class GridCell:
             qty = self.pumpkin_quantity
             self.has_pumpkin_dropped = False
             self.pumpkin_quantity = 0
+            self.record_interaction()  # Reset grass timer when collecting
             return qty
         return 0
     
@@ -284,6 +314,7 @@ class GridCell:
             qty = self.strawberry_quantity
             self.has_strawberry_dropped = False
             self.strawberry_quantity = 0
+            self.record_interaction()  # Reset grass timer when collecting
             return qty
         return 0
     
@@ -293,6 +324,7 @@ class GridCell:
             qty = self.golden_wheat_quantity
             self.has_golden_wheat_dropped = False
             self.golden_wheat_quantity = 0
+            self.record_interaction()  # Reset grass timer when collecting
             return qty
         return 0
 
@@ -602,10 +634,11 @@ class Grid:
             self.cells.append(row_cells)
     
     def update(self, current_time: float):
-        """Update all cells (for plant growth)"""
+        """Update all cells (for plant growth and grass reset)"""
         for row in self.cells:
             for cell in row:
                 cell.update_plant(current_time)
+                cell.check_grass_reset(current_time)
     
     def get_cell_at_position(self, x: int, y: int) -> Optional[GridCell]:
         """Get the cell at screen position"""

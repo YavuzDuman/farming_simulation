@@ -28,6 +28,7 @@ from entities.stone import Stone
 from entities.shop import Shop
 from entities.zombie import Zombie, BruteZombie, HealthDrop
 from entities.portal_door import PortalDoor
+from entities.dark_rock import DarkRock
 from entities.chicken import Chicken
 from entities.cow import Cow
 from entities.fence import Fence, FencedArea
@@ -128,6 +129,9 @@ class GameManager:
         
         # Zombies
         self.zombies: List[Zombie] = []
+        
+        # Dark side obstacles (rocks that block zombie movement)
+        self.dark_rocks: List[DarkRock] = []
         
         # Health drops from zombies
         self.health_drops: List[HealthDrop] = []
@@ -351,8 +355,10 @@ class GameManager:
             if self.cow_pasture:
                 obstacles.extend(self.cow_pasture.get_obstacles())
         else:
-            # Dark Side obstacles
+            # Dark Side obstacles - portal and dark rocks (block zombie movement too)
             obstacles.append(self.dark_portal)
+            # Only include alive rocks (broken rocks have no collision)
+            obstacles.extend([r for r in self.dark_rocks if r.is_alive and not r.is_broken])
         return obstacles
     
     def _on_inventory_slot_click(self, slot_index: int):
@@ -520,8 +526,43 @@ class GameManager:
         # Clear any existing zombies and spawn target count
         self.zombies = []
         self.health_drops = []
+        # Spawn dark side obstacles (rocks that block zombie movement)
+        self._spawn_dark_rocks()
         self._spawn_zombies(TARGET_ZOMBIE_COUNT)
         self._spawn_brute_zombies(TARGET_BRUTE_COUNT)
+    
+    def _spawn_dark_rocks(self):
+        """Spawn dark rock obstacles randomly in the dark side"""
+        self.dark_rocks = []
+        num_rocks = random.randint(15, 25)  # 15-25 rocks scattered around
+        
+        # Get cells to avoid (portal area)
+        occupied_cells = set()
+        # Avoid portal area (first few columns near dark portal)
+        for col in range(0, 3):
+            for row in range(GRID_ROWS // 2 - 2, GRID_ROWS // 2 + 3):
+                occupied_cells.add((col, row))
+        
+        placed = 0
+        attempts = 0
+        max_attempts = num_rocks * 20
+        
+        while placed < num_rocks and attempts < max_attempts:
+            col = random.randint(2, GRID_COLS - 2)
+            row = random.randint(1, GRID_ROWS - 2)
+            
+            if (col, row) not in occupied_cells:
+                # Random size with weighted distribution
+                size = random.choices(
+                    ["small", "medium", "large"],
+                    weights=[3, 5, 2]
+                )[0]
+                
+                self.dark_rocks.append(DarkRock(col, row, size))
+                occupied_cells.add((col, row))
+                placed += 1
+            
+            attempts += 1
 
     def _switch_to_farm(self):
         """Transition back to the farm dimension"""
@@ -529,23 +570,84 @@ class GameManager:
         # Spawn player near the farm portal
         self.farmer.x = self.farm_portal.x - 50
         self.farmer.y = self.farm_portal.y + GRID_SIZE // 2
-        # Clear zombies and health drops
+        # Clear zombies, health drops, and dark side obstacles
         self.zombies = []
         self.health_drops = []
+        self.dark_rocks = []
 
     def _spawn_zombies(self, count):
-        """Spawn regular zombies randomly in the dark side"""
-        for _ in range(count):
-            zx = random.randint(GRID_OFFSET_X + 200, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 100)
-            zy = random.randint(GRID_OFFSET_Y + 100, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 100)
+        """Spawn regular zombies randomly in the dark side (avoiding obstacles)"""
+        obstacles = self._get_obstacles()
+        spawned = 0
+        attempts = 0
+        max_attempts = count * 100
+        
+        while spawned < count and attempts < max_attempts:
+            zx = random.randint(GRID_OFFSET_X + 150, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 150)
+            zy = random.randint(GRID_OFFSET_Y + 150, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 150)
+            
+            # Check if position is valid (not inside an obstacle, with larger buffer)
+            test_rect = pygame.Rect(zx - 40, zy - 40, 80, 80)
+            valid_position = True
+            for obs in obstacles:
+                if hasattr(obs, 'collision_rect') and obs.collision_rect:
+                    if test_rect.colliderect(obs.collision_rect):
+                        valid_position = False
+                        break
+                elif hasattr(obs, 'rect') and obs.rect:
+                    if test_rect.colliderect(obs.rect):
+                        valid_position = False
+                        break
+            
+            if valid_position:
+                self.zombies.append(Zombie(zx, zy))
+                spawned += 1
+            
+            attempts += 1
+        
+        # Fallback: if couldn't spawn all, spawn at random positions
+        while spawned < count:
+            zx = random.randint(GRID_OFFSET_X + 150, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 150)
+            zy = random.randint(GRID_OFFSET_Y + 150, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 150)
             self.zombies.append(Zombie(zx, zy))
+            spawned += 1
     
     def _spawn_brute_zombies(self, count):
-        """Spawn brute zombies randomly in the dark side"""
-        for _ in range(count):
-            zx = random.randint(GRID_OFFSET_X + 200, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 100)
-            zy = random.randint(GRID_OFFSET_Y + 100, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 100)
+        """Spawn brute zombies randomly in the dark side (avoiding obstacles)"""
+        obstacles = self._get_obstacles()
+        spawned = 0
+        attempts = 0
+        max_attempts = count * 100
+        
+        while spawned < count and attempts < max_attempts:
+            zx = random.randint(GRID_OFFSET_X + 150, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 150)
+            zy = random.randint(GRID_OFFSET_Y + 150, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 150)
+            
+            # Check if position is valid (not inside an obstacle, with larger buffer)
+            test_rect = pygame.Rect(zx - 50, zy - 50, 100, 100)
+            valid_position = True
+            for obs in obstacles:
+                if hasattr(obs, 'collision_rect') and obs.collision_rect:
+                    if test_rect.colliderect(obs.collision_rect):
+                        valid_position = False
+                        break
+                elif hasattr(obs, 'rect') and obs.rect:
+                    if test_rect.colliderect(obs.rect):
+                        valid_position = False
+                        break
+            
+            if valid_position:
+                self.zombies.append(BruteZombie(zx, zy))
+                spawned += 1
+            
+            attempts += 1
+        
+        # Fallback: if couldn't spawn all, spawn at random positions
+        while spawned < count:
+            zx = random.randint(GRID_OFFSET_X + 150, GRID_OFFSET_X + GRID_COLS * GRID_SIZE - 150)
+            zy = random.randint(GRID_OFFSET_Y + 150, GRID_OFFSET_Y + GRID_ROWS * GRID_SIZE - 150)
             self.zombies.append(BruteZombie(zx, zy))
+            spawned += 1
     
     def _spawn_health_drop(self, x, y):
         """Spawn a health drop at the given position"""
@@ -1022,6 +1124,7 @@ class GameManager:
             if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.is_tilled and cell.plant_state == 0:  # EMPTY = 0
                 plant_type = seed_to_plant[selected.item_type]
                 if cell.plant_seed(plant_type):
+                    cell.record_interaction()  # Reset grass timer when planting
                     # Award XP for planting seed
                     xp_gained = self._get_seed_xp(selected.item_type)
                     self.player.add_xp(xp_gained)
@@ -1053,6 +1156,7 @@ class GameManager:
                 # Till the grass (turn it brown)
                 cell.is_tilled = True
                 cell.is_hovered = False
+                cell.record_interaction()  # Reset grass reset timer when tilling
         
         # Handle axe chopping
         elif tool.tool_type == ToolType.AXE:
@@ -1082,29 +1186,33 @@ class GameManager:
         
         # Handle hammer smashing stones
         elif tool.tool_type == ToolType.HAMMER:
-            # Check if clicking on a stone
-            for stone in self.stones:
-                if stone.is_alive:
-                    # Check if mouse is near the stone
-                    stone_rect = stone.render_rect
-                    if stone_rect.collidepoint(mouse_pos):
-                        # Check if farmer is close enough to the stone
-                        farmer_center_x = self.farmer.x + self.farmer.width // 2
-                        farmer_center_y = self.farmer.y + self.farmer.height // 2
-                        distance = ((farmer_center_x - stone.x) ** 2 + (farmer_center_y - stone.y) ** 2) ** 0.5
-                        max_distance = GRID_SIZE * 1.5  # Within 1.5 grid cells
-                        if distance <= max_distance:
-                            # Smash the stone
-                            stone_broke = stone.smash()
-                            if stone_broke:
-                                # Award XP based on stone size
-                                xp_activity = f"stone_{stone.size}"
-                                xp_gained = self.player.get_xp_for_activity(xp_activity)
-                                self.player.add_xp(xp_gained)
-                                # Show XP message
-                                self.ui.add_xp_message(xp_activity, xp_gained)
-                                self.tasks_ui.update_task("smash_stone", 1)
-                        break
+            if self.current_dimension == "farm":
+                # Check if clicking on a stone
+                for stone in self.stones:
+                    if stone.is_alive:
+                        # Check if mouse is near the stone
+                        stone_rect = stone.render_rect
+                        if stone_rect.collidepoint(mouse_pos):
+                            # Check if farmer is close enough to the stone
+                            farmer_center_x = self.farmer.x + self.farmer.width // 2
+                            farmer_center_y = self.farmer.y + self.farmer.height // 2
+                            distance = ((farmer_center_x - stone.x) ** 2 + (farmer_center_y - stone.y) ** 2) ** 0.5
+                            max_distance = GRID_SIZE * 1.5  # Within 1.5 grid cells
+                            if distance <= max_distance:
+                                # Smash the stone
+                                stone_broke = stone.smash()
+                                if stone_broke:
+                                    # Award XP based on stone size
+                                    xp_activity = f"stone_{stone.size}"
+                                    xp_gained = self.player.get_xp_for_activity(xp_activity)
+                                    self.player.add_xp(xp_gained)
+                                    # Show XP message
+                                    self.ui.add_xp_message(xp_activity, xp_gained)
+                                    self.tasks_ui.update_task("smash_stone", 1)
+                            break
+            elif self.current_dimension == "dark_side":
+                # Check if clicking on a dark rock
+                self._smash_dark_rocks(mouse_pos)
         
         # Handle sword attacking zombies (only in dark side)
         elif tool.tool_type in [ToolType.SWORD, ToolType.IRON_SWORD, ToolType.GOLDEN_SWORD, ToolType.DIAMOND_SWORD]:
@@ -1226,6 +1334,50 @@ class GameManager:
                         self.player.add_xp(xp_gained)
                         self.ui.add_xp_message('zombie_kill', xp_gained)
 
+    def _smash_dark_rocks(self, mouse_pos: tuple[int, int]):
+        """Smash dark rocks with hammer on dark side"""
+        farmer_center_x = self.farmer.x + self.farmer.width // 2
+        farmer_center_y = self.farmer.y + self.farmer.height // 2
+        
+        for rock in self.dark_rocks:
+            if rock.is_alive and not rock.is_broken:
+                # Check if mouse is near the rock
+                rock_rect = rock.render_rect
+                if rock_rect.collidepoint(mouse_pos):
+                    # Check if farmer is close enough to the rock
+                    distance = ((farmer_center_x - rock.x) ** 2 + (farmer_center_y - rock.y) ** 2) ** 0.5
+                    max_distance = GRID_SIZE * 1.5  # Within 1.5 grid cells
+                    if distance <= max_distance:
+                        # Smash the rock
+                        rock_broke = rock.smash()
+                        if rock_broke:
+                            # Award XP for breaking dark rock
+                            xp_gained = 15
+                            self.player.add_xp(xp_gained)
+                            self.ui.add_xp_message('dark_rock', xp_gained)
+                            self.tasks_ui.update_task("smash_stone", 1)  # Reuse stone task
+                    break
+
+    def _check_dark_rock_collection(self, mouse_pos: tuple[int, int]):
+        """Check if hovering over dark rock gems and collect them"""
+        for rock in self.dark_rocks:
+            if rock.gem_dropped and rock.check_gem_hover(mouse_pos):
+                # Collect the gems
+                gem_collected = rock.collect_gem()
+                if gem_collected > 0:
+                    # Add gems to inventory as DARK_GEM items
+                    from game.inventory import Item, ItemType
+                    gem_item = Item(ItemType.DARK_GEM, gem_collected)
+                    success = self.inventory.add_item(gem_item)
+                    if not success:
+                        # Try extended inventory
+                        success = self.extended_inventory_ui.add_item(gem_item)
+                    if not success:
+                        # Inventory full - put gems back
+                        rock.gem_dropped = True
+                        rock.gem_quantity = gem_collected
+                    break
+
     def _check_stone_collection(self, mouse_pos: tuple[int, int]):
         """Check if hovering over stones and collect them"""
         for stone in self.stones:
@@ -1247,7 +1399,7 @@ class GameManager:
         """Harvest a grown plant on right-click"""
         cell = self.grid.get_cell_at_position(*mouse_pos)
         if cell and (cell.col, cell.row) in self._get_allowed_grid_coords() and cell.plant_state == 3:  # GROWN = 3
-            harvested_qty = cell.harvest()
+            harvested_qty = cell.harvest()  # harvest() already calls record_interaction()
             if harvested_qty > 0:
                 self.tasks_ui.update_task("harvest_crop", 1)
                 # Crops are now on the ground in this cell
@@ -1465,6 +1617,9 @@ class GameManager:
                 self._check_carrot_seed_collection(event.pos)
                 # Check for egg collection on hover
                 self._check_egg_collection(event.pos)
+                # Check for dark rock gem collection on hover (dark side only)
+                if self.current_dimension == "dark_side":
+                    self._check_dark_rock_collection(event.pos)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
                     # Check if chest inventory is open and clicked outside to close
@@ -1675,8 +1830,14 @@ class GameManager:
         else:
             # Dark Side logic
             player_pos = (self.farmer.x, self.farmer.y)
+            obstacles = self._get_obstacles()  # Includes dark rocks
+            
+            # Update dark rocks (animations)
+            for rock in self.dark_rocks:
+                rock.update()
+            
             for zombie in self.zombies:
-                zombie.update(player_pos, dt)
+                zombie.update(player_pos, dt, obstacles)
                 # Check for attack (only from alive zombies not in death animation)
                 if zombie.is_alive and not zombie.is_dying:
                     dist = math.sqrt((zombie.x - self.farmer.x)**2 + (zombie.y - self.farmer.y)**2)
@@ -1813,6 +1974,10 @@ class GameManager:
             render_list.append(('portal', self.farm_portal.sort_y, self.farm_portal))
         else:
             # Add dark side objects
+            # Add dark rocks (obstacles)
+            for rock in self.dark_rocks:
+                render_list.append(('dark_rock', rock.sort_y, rock))
+            
             for zombie in self.zombies:
                 render_list.append(('zombie', zombie.sort_y, zombie))
             

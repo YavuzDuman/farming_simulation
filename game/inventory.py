@@ -53,6 +53,8 @@ class ItemType(Enum):
     COW = "cow"
     # Animal products
     EGG = "egg"
+    # Dark side items
+    DARK_GEM = "dark_gem"
 
 
 class Item:
@@ -309,6 +311,23 @@ class Item:
             pygame.draw.circle(surface, (240, 235, 220), (16, 20), 1)
             pygame.draw.circle(surface, (240, 235, 220), (22, 24), 1)
             pygame.draw.circle(surface, (240, 235, 220), (18, 28), 1)
+        
+        elif self.item_type == ItemType.DARK_GEM:
+            # Draw dark gem (ruby-like red gem)
+            # Shadow
+            pygame.draw.ellipse(surface, (30, 10, 10), (14, 30, 12, 4))
+            # Gem body (diamond/rhombus shape)
+            pygame.draw.polygon(surface, (200, 30, 30), [
+                (20, 4), (34, 20), (20, 36), (6, 20)
+            ])
+            # Inner highlight
+            pygame.draw.polygon(surface, (255, 80, 80), [
+                (20, 8), (30, 20), (20, 32), (10, 20)
+            ])
+            # Sparkle
+            pygame.draw.circle(surface, (255, 200, 200), (16, 14), 3)
+            # Shine line
+            pygame.draw.line(surface, (255, 220, 220), (24, 12), (28, 16), 2)
             
         return surface
     
@@ -376,6 +395,14 @@ class Item:
             pygame.draw.ellipse(screen, (255, 250, 240), (x - 6, y - 8, 12, 16))
             # Egg highlight
             pygame.draw.ellipse(screen, (255, 255, 255), (x - 4, y - 6, 5, 6))
+        elif self.item_type == ItemType.DARK_GEM:
+            # Shadow
+            pygame.draw.ellipse(screen, (30, 10, 10), (x - 6, y + 6, 12, 4))
+            # Red gem (diamond shape)
+            pygame.draw.polygon(screen, (200, 30, 30), [(x, y - 8), (x + 6, y), (x, y + 4), (x - 6, y)])
+            pygame.draw.polygon(screen, (255, 80, 80), [(x, y - 6), (x + 4, y), (x, y + 2), (x - 4, y)])
+            # Sparkle
+            pygame.draw.circle(screen, (255, 200, 200), (x - 2, y - 3), 2)
 
     def draw_in_hand(self, screen: pygame.Surface, x: int, y: int, 
                      direction: str, shake_angle: float = 0):
