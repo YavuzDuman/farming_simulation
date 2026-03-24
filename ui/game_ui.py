@@ -60,6 +60,29 @@ class XPMessage:
         return 255
 
 
+class TempMessage:
+    """A simple temporary text message (for notifications without XP)"""
+    
+    def __init__(self, text: str, x: int, y: int, color: tuple = (255, 255, 100)):
+        self.text = text
+        self.x = x
+        self.y = y
+        self.color = color
+        self.created_time = time.time()
+        self.duration = 3.0  # 3 seconds display time
+    
+    def is_expired(self) -> bool:
+        return time.time() - self.created_time >= self.duration
+    
+    def get_alpha(self) -> int:
+        elapsed = time.time() - self.created_time
+        if elapsed > self.duration - 1.0:
+            fade_progress = (elapsed - (self.duration - 1.0)) / 1.0
+            fade_progress = max(0.0, min(1.0, fade_progress))
+            return int(255 * (1.0 - fade_progress))
+        return 255
+
+
 class GameUI:
     """Handles the in-game user interface"""
     
@@ -75,6 +98,12 @@ class GameUI:
         # UI State
         self.selected_cell_text = None
         self.show_health_bar = False
+        
+        # Weather display
+        self.weather_text = "☀️ Sunny"
+        
+        # Temporary messages (for notifications)
+        self.temp_messages: List[TempMessage] = []
         
         # XP Bar settings
         self.xp_bar_width = 200
@@ -144,15 +173,25 @@ class GameUI:
         msg = XPMessage(activity, xp_amount, self.message_box_x, self.message_box_y + y_offset)
         self.xp_messages.append(msg)
     
+    def show_message(self, text: str, color: tuple = (255, 255, 100)):
+        """Show a temporary notification message"""
+        # Calculate position (stack below existing temp messages)
+        y_offset = len(self.temp_messages) * self.message_spacing
+        msg = TempMessage(text, self.message_box_x, self.message_box_y + y_offset, color)
+        self.temp_messages.append(msg)
+    
     def update(self, selected_cell: tuple = None):
         """Update UI state"""
         self.selected_cell_text = selected_cell
         
         # Remove expired messages
         self.xp_messages = [msg for msg in self.xp_messages if not msg.is_expired()]
+        self.temp_messages = [msg for msg in self.temp_messages if not msg.is_expired()]
         
         # Update message positions
         for i, msg in enumerate(self.xp_messages):
+            msg.y = self.message_box_y + i * self.message_spacing
+        for i, msg in enumerate(self.temp_messages):
             msg.y = self.message_box_y + i * self.message_spacing
     
     def update_xp_display(self, level: int, xp: int, xp_to_next: int, percentage: float):
@@ -165,6 +204,10 @@ class GameUI:
     def update_money_display(self, money: int):
         """Update the money display value"""
         self.player_money = money
+    
+    def update_weather_display(self, weather_text: str):
+        """Update the weather display text"""
+        self.weather_text = weather_text
     
     def update_health_display(self, health: int, max_health: int, show: bool):
         """Update the health display values"""
@@ -219,32 +262,41 @@ class GameUI:
         screen.blit(xp_surface, xp_rect)
     
     def _draw_xp_messages(self, screen: pygame.Surface):
-        """Draw XP notification messages in top right of grid"""
+        """Draw XP notification messages and temp messages in top right of grid"""
+        # Draw XP messages (green theme)
         for msg in self.xp_messages:
             alpha = msg.get_alpha()
             
-            # Create a surface with per-pixel alpha for transparency
             msg_surface = pygame.Surface((self.message_box_width, 24), pygame.SRCALPHA)
+            bg_color = (20, 40, 20, int(alpha * 0.95))
+            border_color = (120, 220, 120, alpha)
             
-            # Background with transparency - darker for better contrast
-            bg_color = (20, 40, 20, int(alpha * 0.95))  # Darker green background
-            border_color = (120, 220, 120, alpha)  # Brighter green border
-            
-            # Draw background
             pygame.draw.rect(msg_surface, bg_color, (0, 0, self.message_box_width, 24), border_radius=4)
             pygame.draw.rect(msg_surface, border_color, (0, 0, self.message_box_width, 24), 2, border_radius=4)
             
-            # Render text with BOLD WHITE for maximum readability
             text_surface = self.message_font.render(msg.display_text, True, (255, 255, 255))
-            # Create alpha version of text
             text_alpha = pygame.Surface(text_surface.get_size(), pygame.SRCALPHA)
             text_alpha.fill((255, 255, 255, alpha))
             text_surface.blit(text_alpha, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            
-            # Blit text onto message surface with proper padding
             msg_surface.blit(text_surface, (8, 3))
+            screen.blit(msg_surface, (msg.x, msg.y))
+        
+        # Draw temp messages (yellow/warning theme)
+        for msg in self.temp_messages:
+            alpha = msg.get_alpha()
             
-            # Blit message surface onto screen
+            msg_surface = pygame.Surface((self.message_box_width, 24), pygame.SRCALPHA)
+            bg_color = (50, 40, 10, int(alpha * 0.95))  # Dark yellow-brown background
+            border_color = (255, 215, 0, alpha)  # Gold border
+            
+            pygame.draw.rect(msg_surface, bg_color, (0, 0, self.message_box_width, 24), border_radius=4)
+            pygame.draw.rect(msg_surface, border_color, (0, 0, self.message_box_width, 24), 2, border_radius=4)
+            
+            text_surface = self.message_font.render(msg.text, True, msg.color)
+            text_alpha = pygame.Surface(text_surface.get_size(), pygame.SRCALPHA)
+            text_alpha.fill((*msg.color, alpha))
+            text_surface.blit(text_alpha, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            msg_surface.blit(text_surface, (8, 3))
             screen.blit(msg_surface, (msg.x, msg.y))
     
     def draw(self, screen: pygame.Surface):
@@ -258,6 +310,11 @@ class GameUI:
         username_surface = self.font.render(self.username, True, YELLOW)
         username_rect = username_surface.get_rect(topleft=(20, 20))
         screen.blit(username_surface, username_rect)
+        
+        # Draw weather display (top-left, next to username)
+        weather_surface = self.font.render(self.weather_text, True, WHITE)
+        weather_rect = weather_surface.get_rect(topleft=(20, 50))
+        screen.blit(weather_surface, weather_rect)
         
         # Draw XP/Level bar
         self._draw_xp_bar(screen)

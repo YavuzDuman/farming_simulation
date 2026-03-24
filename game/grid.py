@@ -49,6 +49,7 @@ class GridCell:
         self.is_hovered = False
         self.is_selected = False
         self.is_tilled = False
+        self.is_watered = False  # Watered state for farming order: hoe -> water -> plant
         # Plant system
         self.plant_state = PlantState.EMPTY
         self.plant_type = PlantType.WHEAT
@@ -118,6 +119,9 @@ class GridCell:
     def get_base_color(self) -> Tuple[int, int, int]:
         """Get the base grass color with variation"""
         if self.is_tilled:
+            if self.is_watered:
+                # Darker brown for watered soil (state machine: hoed -> watered)
+                return (80, 50, 25)  # Darker moist soil
             return BROWN
         
         # Create grass variation
@@ -162,6 +166,7 @@ class GridCell:
         # Check if 30 seconds passed since last interaction
         if current_time - self.last_interaction_time >= GRASS_RESET_TIME:
             self.is_tilled = False
+            self.is_watered = False  # Reset watered state when grass reverts
             self.is_selected = False
             self.is_hovered = False
     
@@ -207,8 +212,9 @@ class GridCell:
         return self._get_growth_duration()
 
     def plant_seed(self, plant_type: str = PlantType.WHEAT):
-        """Plant a seed in this cell"""
-        if self.is_tilled and self.plant_state == PlantState.EMPTY:
+        """Plant a seed in this cell. Requires soil to be hoed AND watered (state machine order)."""
+        # State machine: must hoe first (is_tilled), then water (is_watered), then plant
+        if self.is_tilled and self.is_watered and self.plant_state == PlantState.EMPTY:
             self.plant_state = PlantState.SEED
             self.plant_type = plant_type
             self.plant_time = time.time()
@@ -216,9 +222,10 @@ class GridCell:
         return False
 
     def harvest(self) -> int:
-        """Harvest the grown plant. Returns harvest quantity."""
+        """Harvest the grown plant. Returns harvest quantity. Resets watered state (water absorbed)."""
         if self.plant_state == PlantState.GROWN:
             self.plant_state = PlantState.EMPTY
+            self.is_watered = False  # Water absorbed by plants; need to water again to replant
             self.record_interaction()  # Reset grass timer when harvesting
             harvest_qty = random.randint(2, 4)
             if self.plant_type == PlantType.CARROT:

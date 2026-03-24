@@ -13,7 +13,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, FPS, SKY_BLUE, GREEN, BLACK,
+    SCREEN_WIDTH, SCREEN_HEIGHT, FPS, SKY_BLUE, GREEN, BLACK, RED,
     GRID_OFFSET_X, GRID_OFFSET_Y, GRID_COLS, GRID_ROWS, GRID_SIZE,
     DARK_SIDE_BG, DARK_SIDE_GROUND, DARK_SIDE_BORDER,
     FOG_COLOR, FOG_PARTICLE_COLOR
@@ -56,6 +56,13 @@ class GameState:
     MENU = 0
     PLAYING = 1
     PAUSED = 2
+
+
+class WeatherState:
+    """Enum for weather states"""
+    SUNNY = "sunny"
+    CLOUDY = "cloudy"
+    RAINY = "rainy"
 
 
 class GameManager:
@@ -116,6 +123,16 @@ class GameManager:
         
         # Dimension system
         self.current_dimension = "farm"  # "farm" or "dark_side"
+        
+        # Weather system
+        self.weather = random.choice([WeatherState.SUNNY, WeatherState.CLOUDY, WeatherState.RAINY])
+        self.weather_timer = 0.0
+        self.weather_duration = 60.0  # 1 minute per weather state
+        
+        # Rain watering system
+        self.rain_water_timer = 0.0
+        self.rain_water_interval = 2.0  # Water cells every 2 seconds during rain
+        self.rain_spread_queue = []  # Queue of cells to water (for spread algorithm)
         
         # Confirmation box
         self.confirmation_box = ConfirmationBox(
@@ -575,6 +592,105 @@ class GameManager:
         self.health_drops = []
         self.dark_rocks = []
 
+    def _update_weather(self, dt: float):
+        """Update weather timer and change weather randomly when duration expires."""
+        self.weather_timer += dt
+        if self.weather_timer >= self.weather_duration:
+            self.weather_timer = 0.0
+            # Change to a random weather state
+            weather_options = [WeatherState.SUNNY, WeatherState.CLOUDY, WeatherState.RAINY]
+            old_weather = self.weather
+            self.weather = random.choice(weather_options)
+            # Reset rain spread queue when weather changes
+            if old_weather != self.weather:
+                self.rain_spread_queue = []
+
+    def _get_weather_display_name(self) -> str:
+        """Get a human-readable weather name with emoji."""
+        weather_names = {
+            WeatherState.SUNNY: "☀️ Sunny",
+            WeatherState.CLOUDY: "☁️ Cloudy",
+            WeatherState.RAINY: "🌧️ Rainy"
+        }
+        return weather_names.get(self.weather, "Unknown")
+
+    def _is_weather_rainy(self) -> bool:
+        """Check if current weather is rainy (required for dark side access)."""
+        return self.weather == WeatherState.RAINY
+
+    def _update_rain_watering(self, dt: float):
+        """Update rain watering system - waters hoed cells using spread algorithm."""
+        if self.weather != WeatherState.RAINY:
+            return
+        
+        if self.current_dimension != "farm":
+            return
+        
+        self.rain_water_timer += dt
+        
+        if self.rain_water_timer >= self.rain_water_interval:
+            self.rain_water_timer = 0.0
+            
+            # Initialize spread queue if empty - find starting points
+            if not self.rain_spread_queue:
+                self._initialize_rain_spread()
+            
+            # Water cells from the spread queue (BFS spread)
+            cells_to_water = min(3, len(self.rain_spread_queue))  # Water up to 3 cells per interval
+            for _ in range(cells_to_water):
+                if self.rain_spread_queue:
+                    col, row = self.rain_spread_queue.pop(0)
+                    cell = self.grid.get_cell(col, row)
+                    if cell and cell.is_tilled and not cell.is_watered and cell.plant_state == 0:
+                        cell.is_watered = True
+                        cell.record_interaction()
+                        # Add neighbors to queue (spread algorithm)
+                        self._add_neighbors_to_rain_queue(col, row)
+
+    def _initialize_rain_spread(self):
+        """Initialize the rain spread queue with starting positions."""
+        self.rain_spread_queue = []
+        visited = set()
+        
+        # Find all hoed but unwatered cells as potential starting points
+        hoed_unwatered = []
+        for row_idx, row in enumerate(self.grid.cells):
+            for col_idx, cell in enumerate(row):
+                if cell.is_tilled and not cell.is_watered and cell.plant_state == 0:
+                    hoed_unwatered.append((col_idx, row_idx))
+        
+        if not hoed_unwatered:
+            return
+        
+        # Start from random positions among hoed cells
+        num_starts = min(3, len(hoed_unwatered))  # Up to 3 starting points
+        starts = random.sample(hoed_unwatered, num_starts)
+        
+        for col, row in starts:
+            if (col, row) not in visited:
+                self.rain_spread_queue.append((col, row))
+                visited.add((col, row))
+
+    def _add_neighbors_to_rain_queue(self, col: int, row: int):
+        """Add neighboring hoed cells to the rain spread queue."""
+        neighbors = [
+            (col - 1, row),  # Left
+            (col + 1, row),  # Right
+            (col, row - 1),  # Up
+            (col, row + 1),  # Down
+        ]
+        
+        visited = set(self.rain_spread_queue)
+        
+        for n_col, n_row in neighbors:
+            if (n_col, n_row) in visited:
+                continue
+            if 0 <= n_col < GRID_COLS and 0 <= n_row < GRID_ROWS:
+                cell = self.grid.get_cell(n_col, n_row)
+                if cell and cell.is_tilled and not cell.is_watered and cell.plant_state == 0:
+                    self.rain_spread_queue.append((n_col, n_row))
+                    visited.add((n_col, n_row))
+
     def _spawn_zombies(self, count):
         """Spawn regular zombies randomly in the dark side (avoiding obstacles)"""
         obstacles = self._get_obstacles()
@@ -822,6 +938,7 @@ class GameManager:
                     "col": cell.col,
                     "row": cell.row,
                     "is_tilled": cell.is_tilled,
+                    "is_watered": cell.is_watered,  # Watered state for farming order
                     "plant_state": cell.plant_state,
                     "plant_type": cell.plant_type,
                     "plant_time": cell.plant_time,
@@ -847,6 +964,7 @@ class GameManager:
             if not cell:
                 continue
             cell.is_tilled = cell_data.get("is_tilled", False)
+            cell.is_watered = cell_data.get("is_watered", False)  # Load watered state
             cell.plant_state = cell_data.get("plant_state", 0)
             cell.plant_type = cell_data.get("plant_type", "wheat")
             cell.plant_time = cell_data.get("plant_time", 0)
@@ -860,8 +978,12 @@ class GameManager:
             cell.carrot_seed_quantity = cell_data.get("carrot_seed_quantity", 0)
 
     def _serialize_entities(self) -> Dict[str, Any]:
-        """Serialize trees, stones, chest, and farmer state."""
+        """Serialize trees, stones, chest, farmer state, and weather."""
         return {
+            "weather": {
+                "state": self.weather,
+                "timer": self.weather_timer
+            },
             "farmer": {
                 "x": self.farmer.x,
                 "y": self.farmer.y,
@@ -933,6 +1055,14 @@ class GameManager:
 
     def _apply_entities_state(self, data: Dict[str, Any]):
         """Apply entity state from saved data."""
+        # Load weather state
+        weather_data = data.get("weather", {})
+        if weather_data:
+            saved_weather = weather_data.get("state")
+            if saved_weather:
+                self.weather = saved_weather
+            self.weather_timer = weather_data.get("timer", 0.0)
+        
         farmer_data = data.get("farmer", {})
         if farmer_data:
             self.farmer.x = farmer_data.get("x", self.farmer.x)
@@ -1673,6 +1803,11 @@ class GameManager:
                             dist = math.sqrt((farmer_center[0] - self.farm_portal.collision_rect.centerx)**2 + 
                                              (farmer_center[1] - self.farm_portal.collision_rect.centery)**2)
                             if dist < GRID_SIZE * 2:
+                                # Weather check: can only go to dark side when rainy
+                                if not self._is_weather_rainy():
+                                    # Show message that portal only opens in rainy weather
+                                    self.ui.show_message("The portal only opens during rainy weather!", RED)
+                                    continue
                                 self.confirmation_box.open()
                                 continue
                     elif self.current_dimension == "dark_side":
@@ -1708,6 +1843,17 @@ class GameManager:
                     # Try feeding animals if holding wheat
                     if self._try_feed_animal(event.pos):
                         continue
+
+                    # Check if watering with water bucket (right-click on hoed but unwatered cell)
+                    selected = self.inventory.get_selected_tool()
+                    if selected is not None and hasattr(selected, 'tool_type') and selected.tool_type == ToolType.WATER_BUCKET:
+                        cell = self.grid.get_cell_at_position(*event.pos)
+                        if cell and (cell.col, cell.row) in self._get_allowed_grid_coords():
+                            if cell.is_tilled and not cell.is_watered and cell.plant_state == 0:  # EMPTY = 0
+                                # Water the soil - turns darker brown (state machine: hoed -> watered)
+                                cell.is_watered = True
+                                cell.record_interaction()  # Reset grass reset timer
+                                continue  # Don't fall through to harvest
 
                     # Try to harvest a grown plant
                     self._harvest_plant(event.pos)
@@ -1745,8 +1891,17 @@ class GameManager:
     
     def update(self, dt: float):
         """Update game state"""
+        # Update weather system
+        self._update_weather(dt)
+        
+        # Update rain watering system (waters hoed cells during rain)
+        self._update_rain_watering(dt)
+        
         # Update UI with selected cell info
         self.ui.update(self.grid.selected_cell)
+        
+        # Update weather display in UI
+        self.ui.update_weather_display(self._get_weather_display_name())
         
         # Update farmer swing cooldown
         self.farmer.update_swing_cooldown()

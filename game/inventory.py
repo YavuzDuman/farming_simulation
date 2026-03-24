@@ -19,6 +19,7 @@ class ToolType(Enum):
     HOE = 1
     AXE = 2
     HAMMER = 3
+    WATER_BUCKET = 7
 
 
 # Sword damage values
@@ -566,6 +567,28 @@ class Tool:
             # Face
             pygame.draw.rect(surface, (180, 180, 190), (6, 8, 4, 10))
             pygame.draw.rect(surface, (180, 180, 190), (30, 8, 4, 10))
+            
+        elif self.tool_type == ToolType.WATER_BUCKET:
+            # Draw water bucket
+            # Bucket body (blue-ish metal)
+            pygame.draw.polygon(surface, (100, 140, 180), [
+                (12, 8), (28, 8), (32, 32), (8, 32)
+            ])
+            # Bucket rim
+            pygame.draw.rect(surface, (120, 160, 200), (10, 6, 20, 5), border_radius=2)
+            # Highlight on bucket
+            pygame.draw.polygon(surface, (140, 180, 220), [
+                (14, 10), (18, 10), (20, 28), (16, 28)
+            ])
+            # Water inside (darker blue)
+            pygame.draw.polygon(surface, (50, 100, 180), [
+                (14, 20), (26, 20), (28, 30), (12, 30)
+            ])
+            # Handle
+            pygame.draw.arc(surface, (180, 180, 190), (28, 10, 12, 20), 1.57, 4.71, 3)
+            # Water drops
+            pygame.draw.circle(surface, (100, 160, 255), (16, 34), 2)
+            pygame.draw.circle(surface, (100, 160, 255), (24, 34), 2)
         
         return surface
     
@@ -585,6 +608,36 @@ class Tool:
             self._draw_axe_new(screen, x, y, tool_angle)
         elif self.tool_type == ToolType.HAMMER:
             self._draw_hammer_new(screen, x, y, tool_angle)
+        elif self.tool_type == ToolType.WATER_BUCKET:
+            self._draw_water_bucket(screen, x, y, tool_angle)
+    
+    def _draw_water_bucket(self, screen, x, y, angle):
+        """Draw water bucket held in hand"""
+        import math
+        
+        rad = math.radians(angle)
+        
+        # Bucket body
+        bucket_size = 16
+        # Offset from hand position
+        offset_x = int(math.cos(rad) * 8)
+        offset_y = int(math.sin(rad) * 8)
+        
+        bx = x + offset_x
+        by = y + offset_y
+        
+        # Bucket polygon (tilted based on angle)
+        pygame.draw.polygon(screen, (100, 140, 180), [
+            (bx - 6, by - 10), (bx + 6, by - 10),
+            (bx + 8, by + 6), (bx - 8, by + 6)
+        ])
+        # Bucket rim
+        pygame.draw.rect(screen, (120, 160, 200), (bx - 7, by - 12, 14, 4), border_radius=1)
+        # Water inside
+        pygame.draw.polygon(screen, (50, 100, 180), [
+            (bx - 4, by - 2), (bx + 4, by - 2),
+            (bx + 5, by + 5), (bx - 5, by + 5)
+        ])
     
     def _draw_sword(self, screen, x, y, direction, angle):
         import math
@@ -953,12 +1006,13 @@ class Inventory:
         self.slot_size = 45
         self.slot_spacing = 8
         
-        # Initialize with tools in first 4 slots
+        # Initialize with tools in first 5 slots (sword, hoe, axe, hammer, water bucket)
         self.slots[0] = Tool(ToolType.SWORD, "Sword")
         self.slots[1] = Tool(ToolType.HOE, "Hoe")
         self.slots[2] = Tool(ToolType.AXE, "Axe")
         self.slots[3] = Tool(ToolType.HAMMER, "Hammer")
-        # Slots 4-9 are empty initially
+        self.slots[4] = Tool(ToolType.WATER_BUCKET, "Water Bucket")
+        # Slots 5-9 are empty initially
         
         # Wood collection (stored as Item in slots 4+)
         self.wood_count = 0
@@ -978,7 +1032,8 @@ class Inventory:
             ToolType.SWORD: "Sword",
             ToolType.HOE: "Hoe",
             ToolType.AXE: "Axe",
-            ToolType.HAMMER: "Hammer"
+            ToolType.HAMMER: "Hammer",
+            ToolType.WATER_BUCKET: "Water Bucket"
         }
         return Tool(tool_type, tool_names.get(tool_type, "Tool"))
     
